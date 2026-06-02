@@ -14,9 +14,9 @@ const COLUMNS = [
   'warp_enabled',       // reprojection on? (lag is always on — the simulated condition)
   'injected_lag_ms',    // the LagSim.lagMs setting at capture time
   'source_hz',          // source render-rate cap at capture time
-  'guard_pct',          // guard-band margin (%) at capture time
-  'left_latency_ms',    // measured view-direction latency, no-warp half
-  'right_latency_ms',   // measured view-direction latency, warped half
+  'guard_pct',            // guard-band margin (%) at capture time
+  'no_warp_latency_ms',   // measured view-direction latency without warp
+  'warp_latency_ms',      // measured view-direction latency with warp
 ];
 
 export class Recorder {
@@ -45,8 +45,8 @@ export class Recorder {
       Math.round(s.injectedLagMs),
       Math.round(s.sourceHz),
       Math.round(s.guardPct),
-      s.leftMs.toFixed(2),
-      s.rightMs.toFixed(2),
+      s.noWarpMs.toFixed(2),
+      s.warpMs.toFixed(2),
     ]);
   }
 

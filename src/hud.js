@@ -36,7 +36,7 @@ export class HUD {
   addInputEvents(n) { this._pendingInputEvents += n; }
 
   /** Refresh the on-screen text. Cheap to call every frame (DOM touched ~1 Hz). */
-  update(now, { warpEnabled, motionVectorsOn, leftMs, rightMs }) {
+  update(now, { warpEnabled, motionVectorsOn, noWarpMs, warpMs }) {
     const dt = now - this._lastFlush;
     if (dt < 1000) return;
 
@@ -52,9 +52,9 @@ export class HUD {
     this.el.source.textContent = sourceFps.toFixed(0) + ' FPS';
     this.el.warp.textContent = warpFps.toFixed(0) + ' FPS';
     this.el.inputrate.textContent = inputHz.toFixed(0) + ' Hz';
-    // Measured view-direction latency: lagged half vs warped half.
+    // Measured view-direction latency: without warp → with warp.
     this.el.latency.textContent =
-      `${leftMs.toFixed(0)} → ${rightMs.toFixed(0)} ms`;
+      `${noWarpMs.toFixed(0)} → ${warpMs.toFixed(0)} ms`;
 
     this._sceneFrames = 0;
     this._compositeFrames = 0;
@@ -64,15 +64,12 @@ export class HUD {
 }
 
 /* ---------------------------------------------------------------------------
-   Scoreboard — the shooter's hit/miss counters + per-side crosshair feedback
+   Scoreboard — the shooter's hit/miss counters + crosshair feedback
    ---------------------------------------------------------------------------
    This is the part a non-technical judge reads in one second. Each click is
-   scored independently for the left (lagged) and right (warped) halves, and a
-   "hitmarker" (green ✓) or "miss" (red ✗) flashes at that half's crosshair.
-
-   Feedback is per-half DOM, drawn on top of the warped canvas — it never
-   touches the shared scene texture, so a hit on the right doesn't visually
-   leak onto the left.
+   scored into the bucket for the current warp MODE (with-warp vs without-warp),
+   and a "hitmarker" (green ✓) or "miss" (red ✗) flashes at the crosshair. The
+   two tallies persist so the comparison survives toggling W.
 --------------------------------------------------------------------------- */
 export class Scoreboard {
   constructor() {

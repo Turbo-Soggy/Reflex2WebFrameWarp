@@ -2,12 +2,9 @@
    quad-render.js — Draws a textured full-screen quad through the warp shader
    ---------------------------------------------------------------------------
    A tiny scene containing a single rectangle that covers the screen. We point
-   the warp material at the rendered-scene texture, set the reprojection delta,
-   and draw it into one half of the split screen.
-
-   Both halves reuse the SAME quad + material — the only difference is the
-   `delta` we pass: 0 for the left (lagged) half, and the fresh camera motion
-   for the right (warped) half.
+   the warp material at the rendered-scene texture, set the reprojection delta
+   (0 when warp is off, the fresh camera motion when on), and draw it to the
+   fullscreen viewport.
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
@@ -31,16 +28,15 @@ export class QuadRenderer {
   }
 
   /**
-   * Draw the texture into a viewport rectangle, warped by `delta`.
+   * Draw the texture to the fullscreen viewport, warped by `delta`.
    * @param renderer  the shared WebGLRenderer
    * @param texture   the rendered-scene color texture (from WarpTarget)
    * @param delta     [du, dv] camera reprojection shift in display-UV units
-   * @param x         viewport left edge, in CSS pixels
    * @param width     viewport width, in CSS pixels
    * @param height    viewport height, in CSS pixels
    * @param mv        { texture, dtSeconds, enabled } motion-vector inputs
    */
-  render(renderer, texture, delta, x, width, height, mv) {
+  render(renderer, texture, delta, width, height, mv) {
     const u = this.material.uniforms;
     u.tDiffuse.value = texture;
     u.uDelta.value.set(delta[0], delta[1]);
@@ -48,9 +44,8 @@ export class QuadRenderer {
     u.uDeltaTime.value = mv.dtSeconds;
     u.uMotionVectors.value = mv.enabled ? 1 : 0;
 
-    renderer.setViewport(x, 0, width, height);
-    renderer.setScissor(x, 0, width, height);
-    renderer.setScissorTest(true);
+    renderer.setViewport(0, 0, width, height);
+    renderer.setScissorTest(false);
     renderer.render(this.scene, this.camera);
   }
 }

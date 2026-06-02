@@ -4,8 +4,8 @@
    Bullseye targets that slide laterally along a track against the back wall.
    The lateral motion is the point: to hit a moving target you must TRACK it —
    your mouse is in motion when you click. That is the only situation where the
-   lagged view actually matters, so it's what makes the left half miss and the
-   right (warped) half hit, naturally and without the judge needing the theory.
+   lagged view actually matters, so it's what makes you miss without warp and
+   hit with it, naturally and without the judge needing the theory.
 
    Honesty detail: positions are a pure function of time and are advanced ONLY
    on the 30 FPS render tick (main.js calls update() inside the render block).

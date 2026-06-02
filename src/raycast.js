@@ -5,17 +5,11 @@
    along the forward axis of a given (yaw, pitch) — i.e. straight through the
    crosshair at screen center.
 
-   The trick that makes left miss and right hit on the SAME click is WHICH
-   orientation we pass in:
-
-     • LEFT shot  → the LAGGED orientation (what the un-warped left image shows).
-     • RIGHT shot → the CURRENT orientation when warp is on (what the warped
-                    image shows), or the lagged one when warp is off.
-
-   Both shots are tested against the SAME target meshes. So the only thing that
-   can make them disagree is the camera-rotation latency between the lagged and
-   current view — which is exactly the quantity the warp shader reprojects by.
-   No faked target states; the divergence emerges from the real warp mechanism.
+   What makes the shot hit or miss is WHICH orientation main.js passes in: the
+   CURRENT orientation when warp is on (what the reprojected screen shows → you
+   hit what you see) or the LAGGED orientation when warp is off (what the stale
+   frame shows → you miss while tracking). It's the same real camera-rotation
+   latency the warp shader reprojects by — no faked target states.
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';

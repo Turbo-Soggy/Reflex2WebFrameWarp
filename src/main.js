@@ -10,12 +10,12 @@
        quad-render.js (quad)    ──┤          [display rate] warp texture → screen
        warp-shader.js (math)    ──┘                         + hud.js (stats)
 
-   The crucial change from Stage 1: rendering happens in TWO phases at TWO
-   different rates.
+   Rendering happens in TWO phases at TWO different rates, onto a single
+   fullscreen viewport:
      • SLOW (30 FPS): draw the 3D scene into an off-screen texture.
-     • FAST (display rate, 60/120/165 Hz): draw that texture to both halves of
-       the split screen — the LEFT unchanged (lagged), the RIGHT reprojected to
-       follow the freshest mouse input.
+     • FAST (display rate, 60/120/165 Hz): draw that texture to the screen,
+       reprojected to follow the freshest mouse input when warp is on. 'W'
+       toggles the warp; the scoreboard compares accuracy with vs without it.
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
@@ -74,9 +74,8 @@ renderer.autoClear = true;
 // --- World -----------------------------------------------------------------
 const world = createScene();
 
-// One camera shared by both halves. Aspect is HALF the window width because
-// each split-screen viewport is half-width. It renders at the WIDER guard-band
-// FOV; the shader crops back to the display FOV.
+// The scene camera. Aspect is set to the full window in resize(). It renders at
+// the WIDER guard-band FOV; the shader crops back to the display FOV.
 const camera = new THREE.PerspectiveCamera(renderFovDeg(), 1, 0.1, 200);
 camera.position.set(0, 1.7, 0);
 
@@ -357,7 +356,7 @@ function frame() {
     hud.countSceneFrame();
   }
 
-  // 3) FAST CLOCK (display rate): composite the texture to both halves.
+  // 3) FAST CLOCK (display rate): composite the texture to the screen.
   //    Compute how far the camera has rotated SINCE the frame was rendered, and
   //    convert that angular motion into a texture-space shift via the FOV.
   const fresh = input.snapshot();
@@ -382,7 +381,7 @@ function frame() {
     dtSeconds: Math.max(0, (now - lastRenderWallTime) / 1000),
     enabled: motionVectorsOn,
   };
-  quad.render(renderer, warpTarget.texture, delta, 0, fullW, fullH, mv);
+  quad.render(renderer, warpTarget.texture, delta, fullW, fullH, mv);
 
   hud.countCompositeFrame();
 
@@ -393,15 +392,15 @@ function frame() {
     injectedLagMs: lag.lagMs,
     sourceHz: 1000 / lag.renderInterval,
     guardPct: guard * 100,
-    leftMs: lat.left,
-    rightMs: lat.right,
+    noWarpMs: lat.noWarp,
+    warpMs: lat.warp,
   });
-  chart.draw(now, latency.left, latency.right);
+  chart.draw(now, latency.noWarp, latency.warp);
   hud.update(now, {
     warpEnabled,
     motionVectorsOn,
-    leftMs: latency.smoothLeft,
-    rightMs: latency.smoothRight,
+    noWarpMs: latency.smoothNoWarp,
+    warpMs: latency.smoothWarp,
   });
   if (recorder.recording) updateRecIndicator(); // live sample count
 }
