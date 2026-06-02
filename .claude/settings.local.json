@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git --version)",
+      "Bash(python -m http.server 8000)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/src/main.js)",
+      "Bash(kill %1)",
+      "Bash(pkill -f \"http.server 8000\")",
+      "mcp__Claude_Preview__preview_start",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }; Start-Sleep -Seconds 1; \"done\")",
+      "Bash(curl -s \"https://unpkg.com/three@0.169.0/build/three.module.js\" -o vendor/three/three.module.js)",
+      "Bash(curl -s \"http://localhost:8000/src/main.js?nocache=$\\(date +%s\\)\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:8000/)",
+      "Bash(curl -s -I http://localhost:8000/src/main.js)",
+      "Bash(curl -s -o /dev/null -w 'req__TRACKED_VAR__: %{http_code}\\\\n' http://localhost:8000/src/lag.js)"
+    ]
+  }
+}

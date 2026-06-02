@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frame Warp — Latency Reprojection Demo</title>
+
+  <!--
+    Import map: lets us write `import * as THREE from 'three'` in our JS
+    modules and resolve it to a local copy of Three.js (vendored in
+    vendor/three/). Hosted locally so the demo works offline and can't break
+    mid-defense if the network drops. To update: re-download build/three.module.js
+    for the pinned revision (r169) from the three.js release.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js"
+    }
+  }
+  </script>
+
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+  <!-- The single canvas. We draw BOTH split-screen views onto it. -->
+  <canvas id="view"></canvas>
+
+  <!-- Heads-up display overlay (FPS, latency, current mode). -->
+  <div id="hud">
+    <div class="hud-row"><span class="hud-label">Mode</span><span id="hud-mode">Frame Warp: ON</span></div>
+    <div class="hud-row"><span class="hud-label">Source FPS</span><span id="hud-source">—</span></div>
+    <div class="hud-row"><span class="hud-label">Warp FPS</span><span id="hud-warp">—</span></div>
+    <div class="hud-row"><span class="hud-label">Input rate</span><span id="hud-inputrate">—</span></div>
+    <div class="hud-row"><span class="hud-label">View latency</span><span id="hud-latency">—</span></div>
+  </div>
+
+  <!-- Scoreboard (corner): two persistent tallies so the comparison survives
+       toggling W. The active mode is highlighted. -->
+  <div id="scoreboard">
+    <div id="stats-off" class="statline bad"></div>
+    <div id="stats-on" class="statline good"></div>
+  </div>
+
+  <!-- Persistent play instruction (top-center). -->
+  <div id="play-hint">Track the target and shoot while moving</div>
+
+  <!-- Crosshair: pure DOM, drawn ON TOP of the warped canvas so it stays crisp
+       and fixed (the "UI masking" idea — UI is composited after the warp). -->
+  <div id="crosshair" class="crosshair"></div>
+
+  <!-- Hit/miss feedback ("hitmarker") flashed at the crosshair. -->
+  <div id="feedback" class="feedback"></div>
+
+  <!-- Live latency chart: lagged (orange) vs warped (blue) over time. -->
+  <div id="chart-panel">
+    <div class="chart-title">View-direction latency (ms, measured)</div>
+    <canvas id="latency-chart" width="280" height="120"></canvas>
+    <div class="chart-legend">
+      <span><i class="swatch" style="background:#ff7a5c"></i>No warp</span>
+      <span><i class="swatch" style="background:#4cc2ff"></i>Warp</span>
+      <span id="rec-indicator">press R to record</span>
+    </div>
+  </div>
+
+  <!-- Parameter panel: examiners can change the experiment live. Press Esc to
+       release the mouse first, adjust, then click the scene to re-enter. -->
+  <div id="param-panel">
+    <div class="param-title">Parameters</div>
+    <label class="param-row">
+      <span>Injected lag <b><span id="val-lag">80</span> ms</b></span>
+      <input type="range" id="sl-lag" min="0" max="250" step="5" value="80" />
+    </label>
+    <label class="param-row">
+      <span>Source rate <b><span id="val-hz">30</span> FPS</b></span>
+      <input type="range" id="sl-hz" min="10" max="60" step="5" value="30" />
+    </label>
+    <label class="param-row">
+      <span>Guard band <b><span id="val-guard">12</span> %</b></span>
+      <input type="range" id="sl-guard" min="0" max="30" step="1" value="12" />
+    </label>
+  </div>
+
+  <!-- Click-to-start prompt (Pointer Lock requires a user gesture). -->
+  <div id="overlay">
+    <div class="overlay-card">
+      <h1>Frame Warp</h1>
+      <p>Click to enter. Track the moving targets and click to shoot.</p>
+      <p class="hint"><kbd>Click</kbd> shoot · <kbd>Esc</kbd> release · <kbd>W</kbd> warp on/off · <kbd>D</kbd> demo mode · <kbd>R</kbd>/<kbd>E</kbd> record/export</p>
+      <p class="hint">Both sides run at 30 FPS. Press <kbd>W</kbd>: the warp half fires where you <em>are</em> aiming and hits; without it, where you <em>were</em> — and misses.</p>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
