@@ -46,6 +46,7 @@ the mouse to look around.
 | Click (in scene) | Shoot — scored into the current mode's tally |
 | `Esc` | Release the mouse |
 | `W` | Toggle Frame Warp on/off (the only demo switch) |
+| `M` | Toggle motion vectors on/off *(motion-vectors branch)* |
 | `D` | Toggle demo mode (hide tech readouts, big scores) |
 | `R` | Start / stop recording latency samples |
 | `E` | Export the recorded samples as a CSV |
@@ -59,6 +60,27 @@ not a toggle. `W` is the only switch. With warp off the screen shows the raw
 lagged frame, so the crosshair points where you were aiming ~95 ms ago and you
 miss; press `W` and the frame is reprojected to your *current* aim, so you hit.
 That toggle is the core result of the project.
+
+### Motion vectors (the third layer — `motion-vectors` branch)
+
+Camera warp fixes *aim* latency but can't touch a moving object's own motion, so
+the laterally-sliding target judders at the 30 FPS source rate (the documented
+ATW limitation). The `motion-vectors` branch adds the next layer, the way DLSS
+Frame Generation does:
+
+- A second 30 FPS pass renders a **velocity buffer** (`velocity-pass.js` →
+  `warp-target.js`'s `velocityRT`): a half-float target storing each pixel's
+  screen-space velocity (UV/sec). Static geometry is 0; the target's disc carries
+  its projected world velocity.
+- The warp shader reads it and adds a **per-pixel** object shift on top of the
+  global camera shift: `sampleUV = cameraReproj − velocity · dt`, where `dt` is
+  the age of the source frame. Static pixels (velocity 0) are unaffected.
+- `M` toggles it. Off → the target steps at 30 FPS; on → it moves smoothly at
+  display rate. This is primarily a **visual** win (judder → smooth); `W` remains
+  the aim/accuracy win. Together: no warp → laggy aim; `W` → responsive aim,
+  juddery objects; `W`+`M` → responsive aim, smooth objects.
+
+`main` has the stable single-screen demo without motion vectors.
 
 ### How the hit detection stays honest
 

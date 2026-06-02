@@ -34,9 +34,13 @@ export function createWarpMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: {
       tDiffuse: { value: null },               // the rendered scene texture
-      uDelta: { value: new THREE.Vector2(0, 0) }, // reprojection shift, display-UV units
+      uDelta: { value: new THREE.Vector2(0, 0) }, // camera reprojection shift, display-UV units
       uGuard: { value: 0.0 },                  // guard-band margin per side (0..0.5)
       uScale: { value: 1.0 },                  // 1 - 2*uGuard (central crop fraction)
+      // --- motion-vector inputs ---
+      uVelocityBuffer: { value: null },        // RG screen-velocity (UV/sec), raw signed, 0 = none
+      uDeltaTime: { value: 0.0 },              // seconds since the source frame was rendered
+      uMotionVectors: { value: 0.0 },          // 0 = off, 1 = on
     },
 
     // Full-screen triangle/quad: position already spans clip space [-1,1],
@@ -52,21 +56,28 @@ export function createWarpMaterial() {
     fragmentShader: /* glsl */ `
       precision highp float;
       uniform sampler2D tDiffuse;
+      uniform sampler2D uVelocityBuffer;
       uniform vec2 uDelta;
       uniform float uGuard;
       uniform float uScale;
+      uniform float uDeltaTime;
+      uniform float uMotionVectors;
       varying vec2 vUv;
 
       void main() {
-        // Map the displayed pixel into the central crop, then reproject. The
-        // reprojection shift is in display-UV units, so scale it into texture
-        // space too. Pulling from the guard-band margin = real pixels.
-        vec2 sampleUV = uGuard + (vUv + uDelta) * uScale;
+        // 1) Map the displayed pixel into the central crop (texture space), then
+        //    apply the global CAMERA reprojection (display-UV → texture via uScale).
+        vec2 camSample = uGuard + (vUv + uDelta) * uScale;
 
-        // Fallback in-painting: if the motion exhausts the margin, clamp.
-        vec2 uv = clamp(sampleUV, 0.0, 1.0);
+        // 2) Per-pixel OBJECT motion: read this pixel's screen velocity from the
+        //    velocity buffer and extrapolate it forward by the frame's age. Static
+        //    pixels read 0.5 → zero velocity → no change. Sampling backward by the
+        //    motion makes the moving object appear at its current position.
+        vec2 vel = texture2D(uVelocityBuffer, clamp(camSample, 0.0, 1.0)).rg; // raw UV/sec
+        vec2 objShift = uMotionVectors * vel * uDeltaTime;
 
-        gl_FragColor = texture2D(tDiffuse, uv);
+        vec2 sampleUV = clamp(camSample - objShift, 0.0, 1.0);
+        gl_FragColor = texture2D(tDiffuse, sampleUV);
       }
     `,
 

@@ -12,6 +12,13 @@
    We also remember the camera orientation the frame was rendered AT, so the
    compositor can later compute how far the camera has moved since, and warp by
    exactly that much.
+
+   MOTION VECTORS (motion-vectors branch): alongside the color buffer we keep a
+   second, matching render target — the VELOCITY buffer. It is rendered at the
+   same 30 FPS, at the same resolution, from the same camera, but stores each
+   pixel's screen-space object velocity (RG, centred at 0.5) instead of colour.
+   The warp shader reads both: colour to sample, velocity to displace moving
+   objects per-pixel. Static geometry has zero velocity, so it is unaffected.
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
@@ -27,16 +34,34 @@ export class WarpTarget {
     // it directly without a second color conversion.
     this.rt.texture.colorSpace = THREE.SRGBColorSpace;
 
+    // Velocity buffer: same size, but DATA — a HALF-FLOAT target storing raw
+    // signed screen velocity (UV/sec), 0 = no motion. Float avoids 8-bit
+    // precision loss and the sRGB clear-colour conversion that would corrupt a
+    // 0.5-centred encoding. Nearest filtering so velocities don't bleed across
+    // object edges.
+    this.velocityRT = new THREE.WebGLRenderTarget(width, height, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      type: THREE.HalfFloatType,
+      depthBuffer: false, // the velocity material doesn't depth-test (target unoccluded)
+    });
+
     // Orientation the most recent frame was rendered with (radians).
     this.renderedYaw = 0;
     this.renderedPitch = 0;
   }
 
   setSize(width, height) {
-    this.rt.setSize(Math.max(1, width), Math.max(1, height));
+    const w = Math.max(1, width), h = Math.max(1, height);
+    this.rt.setSize(w, h);
+    this.velocityRT.setSize(w, h);
   }
 
   get texture() {
     return this.rt.texture;
+  }
+
+  get velocityTexture() {
+    return this.velocityRT.texture;
   }
 }

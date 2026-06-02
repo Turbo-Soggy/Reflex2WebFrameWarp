@@ -13,7 +13,9 @@
       "Bash(curl -s \"http://localhost:8000/src/main.js?nocache=$\\(date +%s\\)\")",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:8000/)",
       "Bash(curl -s -I http://localhost:8000/src/main.js)",
-      "Bash(curl -s -o /dev/null -w 'req__TRACKED_VAR__: %{http_code}\\\\n' http://localhost:8000/src/lag.js)"
+      "Bash(curl -s -o /dev/null -w 'req__TRACKED_VAR__: %{http_code}\\\\n' http://localhost:8000/src/lag.js)",
+      "Bash(git add *)",
+      "Bash(git -c user.name=Isaac -c user.email=isaac.ibddavid@gmail.com commit -q -m ' *)"
     ]
   }
 }

@@ -30,6 +30,7 @@ import { LatencyChart } from './chart.js';
 import { Recorder } from './recorder.js';
 import { Targets } from './targets.js';
 import { shoot } from './raycast.js';
+import { VelocityPass } from './velocity-pass.js';
 
 // --- Display / guard-band geometry constants -------------------------------
 // The FOV the user actually sees. The scene is rendered WIDER than this so the
@@ -86,6 +87,7 @@ const hud = new HUD();
 const warpTarget = new WarpTarget(1, 1);  // sized properly in resize()
 const quad = new QuadRenderer();
 quad.setGuard(guard);
+const velocityPass = new VelocityPass();
 const latency = new Latency();
 const chart = new LatencyChart(document.getElementById('latency-chart'));
 const recorder = new Recorder();
@@ -103,6 +105,15 @@ let warpEnabled = false;
 // Demo mode hides all the technical readouts and enlarges the score (for
 // non-technical judges). Toggle with 'D'.
 let demoMode = false;
+
+// Motion vectors: the third layer. When OFF, the velocity buffer is ignored and
+// the moving target judders at the 30 FPS source rate. When ON, the velocity
+// pass runs and the warp shader smooths object motion to display rate. Toggle 'M'.
+let motionVectorsOn = false;
+
+// Wall-clock time (ms) of the most recent 30 FPS render — the velocity warp
+// extrapolates object motion forward by (now - this) seconds.
+let lastRenderWallTime = performance.now();
 
 // Simple fire cooldown so spam-clicking doesn't muddy the score data.
 const SHOOT_COOLDOWN_MS = 120;
@@ -204,6 +215,10 @@ window.addEventListener('keydown', (e) => {
       document.body.classList.toggle('demo-mode', demoMode);
       console.log('[FrameWarp] demo mode', demoMode ? 'ON (scores only)' : 'OFF (tech readouts)');
       break;
+    case 'm':
+      motionVectorsOn = !motionVectorsOn;
+      console.log('[FrameWarp] motion vectors', motionVectorsOn ? 'ON' : 'OFF');
+      break;
   }
 });
 updateRecIndicator();
@@ -302,6 +317,15 @@ function frame() {
     renderer.render(world.scene, camera);
     renderer.setRenderTarget(null);
 
+    // Motion-vector pass: write each target's screen velocity into the velocity
+    // buffer (same camera, same 30 FPS). Only when enabled — otherwise the warp
+    // shader ignores it anyway. Targets are already at their lagged positions
+    // and their velocities were stored by the update() above.
+    if (motionVectorsOn) {
+      velocityPass.render(renderer, warpTarget.velocityRT, camera, targets.meshes, targets.getVelocities());
+    }
+    lastRenderWallTime = now; // the buffers are now "fresh" as of this tick
+
     hud.countSceneFrame();
   }
 
@@ -322,9 +346,15 @@ function frame() {
   const dv =  dPitch / fovY;
 
   // Single fullscreen viewport. Warp ON reprojects toward the freshest input;
-  // warp OFF shows the raw lagged frame (zero shift).
+  // warp OFF shows the raw lagged frame (zero shift). The motion-vector inputs
+  // smooth moving objects per-pixel when enabled (dt = age of the source frame).
   const delta = warpEnabled ? [du, dv] : [0, 0];
-  quad.render(renderer, warpTarget.texture, delta, 0, fullW, fullH);
+  const mv = {
+    texture: warpTarget.velocityTexture,
+    dtSeconds: Math.max(0, (now - lastRenderWallTime) / 1000),
+    enabled: motionVectorsOn,
+  };
+  quad.render(renderer, warpTarget.texture, delta, 0, fullW, fullH, mv);
 
   hud.countCompositeFrame();
 
@@ -341,6 +371,7 @@ function frame() {
   chart.draw(now, latency.left, latency.right);
   hud.update(now, {
     warpEnabled,
+    motionVectorsOn,
     leftMs: latency.smoothLeft,
     rightMs: latency.smoothRight,
   });
@@ -350,7 +381,8 @@ function frame() {
 frame();
 
 window.FrameWarp = { renderer, camera, world, input, lag, warpTarget, quad, latency, recorder,
-  targets, scoreboard, fire,
+  targets, scoreboard, velocityPass, fire,
   get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
+  get motionVectorsOn() { return motionVectorsOn; }, set motionVectorsOn(v) { motionVectorsOn = v; },
   get guard() { return guard; } };
-console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp R=record E=export D=demo-mode.');
+console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors R=record E=export D=demo-mode.');

@@ -23,6 +23,7 @@ const RADIUS = 0.4;
 export class Targets {
   constructor(range) {
     this.range = range;
+    this.radius = RADIUS;
     this.group = new THREE.Group();
     this.meshes = [];
     this._period = CROSS_SECONDS * 2; // full back-and-forth
@@ -47,7 +48,10 @@ export class Targets {
       const disc = new THREE.Mesh(new THREE.CircleGeometry(RADIUS, 48), mat);
       disc.position.set(0, lanes[i].y, range.trackZ); // x set in update()
       disc.castShadow = true;
-      disc.userData = { phase: lanes[i].phase, baseY: lanes[i].y, pulse: i * 0.9 };
+      disc.userData = {
+        phase: lanes[i].phase, baseY: lanes[i].y, pulse: i * 0.9,
+        vel: new THREE.Vector3(0, 0, 0), // current world velocity (units/sec)
+      };
       this.group.add(disc);
       this.meshes.push(disc);
     }
@@ -55,18 +59,26 @@ export class Targets {
 
   /**
    * Advance positions. `elapsed` is absolute seconds. Called on the render tick
-   * (30 FPS), so the displayed frame and the hit-test agree exactly.
+   * (30 FPS), so the displayed frame and the hit-test agree exactly. Also stores
+   * each target's current world-space velocity for the motion-vector pass.
    */
   update(elapsed) {
     const L = this.range.trackXLimit;
+    const speed = (L * 4) / this._period; // |dx/dt| of the triangle wave
     for (const m of this.meshes) {
       const u = ((elapsed / this._period) + m.userData.phase) % 1; // 0..1
       const tri = u < 0.5 ? (-1 + 4 * u) : (3 - 4 * u);            // triangle -1..1
       m.position.x = L * tri;
+      m.userData.vel.set(u < 0.5 ? speed : -speed, 0, 0);          // lateral velocity
       // tiny idle pulse (kept small so it never moves the hit center)
       const s = 1 + Math.sin(elapsed * 2 + m.userData.pulse) * 0.04;
       m.scale.setScalar(s);
     }
+  }
+
+  /** Current world-space velocity (units/sec) of each target, aligned with .meshes. */
+  getVelocities() {
+    return this.meshes.map((m) => m.userData.vel);
   }
 }
 

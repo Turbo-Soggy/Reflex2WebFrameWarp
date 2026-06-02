@@ -36,7 +36,7 @@ export class HUD {
   addInputEvents(n) { this._pendingInputEvents += n; }
 
   /** Refresh the on-screen text. Cheap to call every frame (DOM touched ~1 Hz). */
-  update(now, { warpEnabled, leftMs, rightMs }) {
+  update(now, { warpEnabled, motionVectorsOn, leftMs, rightMs }) {
     const dt = now - this._lastFlush;
     if (dt < 1000) return;
 
@@ -45,7 +45,8 @@ export class HUD {
     const inputHz = (this._pendingInputEvents * 1000) / dt;
 
     // Lag is always on (it's the simulated condition); warp is the only toggle.
-    this.el.mode.textContent = warpEnabled ? 'Frame Warp: ON' : 'Frame Warp: OFF';
+    this.el.mode.textContent =
+      (warpEnabled ? 'Frame Warp: ON' : 'Frame Warp: OFF') + ` · MV: ${motionVectorsOn ? 'ON' : 'OFF'}`;
     this.el.mode.style.color = warpEnabled ? 'var(--accent)' : 'var(--warn)';
 
     this.el.source.textContent = sourceFps.toFixed(0) + ' FPS';

@@ -33,15 +33,20 @@ export class QuadRenderer {
   /**
    * Draw the texture into a viewport rectangle, warped by `delta`.
    * @param renderer  the shared WebGLRenderer
-   * @param texture   the rendered-scene texture (from WarpTarget)
-   * @param delta     [du, dv] reprojection shift in UV units
+   * @param texture   the rendered-scene color texture (from WarpTarget)
+   * @param delta     [du, dv] camera reprojection shift in display-UV units
    * @param x         viewport left edge, in CSS pixels
    * @param width     viewport width, in CSS pixels
    * @param height    viewport height, in CSS pixels
+   * @param mv        { texture, dtSeconds, enabled } motion-vector inputs
    */
-  render(renderer, texture, delta, x, width, height) {
-    this.material.uniforms.tDiffuse.value = texture;
-    this.material.uniforms.uDelta.value.set(delta[0], delta[1]);
+  render(renderer, texture, delta, x, width, height, mv) {
+    const u = this.material.uniforms;
+    u.tDiffuse.value = texture;
+    u.uDelta.value.set(delta[0], delta[1]);
+    u.uVelocityBuffer.value = mv.texture;
+    u.uDeltaTime.value = mv.dtSeconds;
+    u.uMotionVectors.value = mv.enabled ? 1 : 0;
 
     renderer.setViewport(x, 0, width, height);
     renderer.setScissor(x, 0, width, height);
