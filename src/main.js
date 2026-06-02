@@ -115,6 +115,10 @@ let motionVectorsOn = false;
 // extrapolates object motion forward by (now - this) seconds.
 let lastRenderWallTime = performance.now();
 
+// Slow-motion debug mode (Shift+M): drops the source rate to 10 FPS so the
+// motion-vector effect (judder → smooth) is unmistakable. Restores on toggle.
+let slowMo = false;
+
 // Simple fire cooldown so spam-clicking doesn't muddy the score data.
 const SHOOT_COOLDOWN_MS = 120;
 let lastShot = -Infinity;
@@ -155,6 +159,19 @@ function fire() {
   const hitTime = (warpEnabled && isTracking) ? lastRenderedElapsed : clock.getElapsedTime();
 
   targets.update(hitTime);
+
+  // Motion-vector-aware hit test: when M is on, shift each tested target by the
+  // SAME velocity × dt the warp shader applies to the DISPLAY (dt = age of the
+  // source frame, identical to the shader's uDeltaTime). This keeps "what you
+  // see = what you hit": W's accuracy story still holds when M is also on, and
+  // the two layers compose cleanly across all four on/off combinations.
+  if (motionVectorsOn) {
+    const dt = Math.max(0, (performance.now() - lastRenderWallTime) / 1000);
+    const vels = targets.getVelocities();
+    for (let i = 0; i < targets.meshes.length; i++) {
+      targets.meshes[i].position.addScaledVector(vels[i], dt);
+    }
+  }
   targets.group.updateMatrixWorld(true);
 
   const hit = shoot(camera.position, yaw, pitch, targets.meshes);
@@ -216,8 +233,19 @@ window.addEventListener('keydown', (e) => {
       console.log('[FrameWarp] demo mode', demoMode ? 'ON (scores only)' : 'OFF (tech readouts)');
       break;
     case 'm':
-      motionVectorsOn = !motionVectorsOn;
-      console.log('[FrameWarp] motion vectors', motionVectorsOn ? 'ON' : 'OFF');
+      if (e.shiftKey) {
+        // Shift+M: toggle slow-mo by driving the Source-rate slider (keeps the
+        // panel, label and LagSim in sync via the normal slider path).
+        const sl = document.getElementById('sl-hz');
+        slowMo = !slowMo;
+        if (slowMo) { sl.dataset.prev = sl.value; sl.value = '10'; }
+        else { sl.value = sl.dataset.prev || '30'; }
+        sl.dispatchEvent(new Event('input', { bubbles: true }));
+        console.log('[FrameWarp] slow-mo', slowMo ? 'ON (10 FPS)' : 'OFF');
+      } else {
+        motionVectorsOn = !motionVectorsOn;
+        console.log('[FrameWarp] motion vectors', motionVectorsOn ? 'ON' : 'OFF');
+      }
       break;
   }
 });
@@ -385,4 +413,4 @@ window.FrameWarp = { renderer, camera, world, input, lag, warpTarget, quad, late
   get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
   get motionVectorsOn() { return motionVectorsOn; }, set motionVectorsOn(v) { motionVectorsOn = v; },
   get guard() { return guard; } };
-console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors R=record E=export D=demo-mode.');
+console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors (Shift+M=slow-mo) R=record E=export D=demo-mode.');

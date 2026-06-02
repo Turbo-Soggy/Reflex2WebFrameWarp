@@ -76,9 +76,15 @@ Frame Generation does:
   global camera shift: `sampleUV = cameraReproj − velocity · dt`, where `dt` is
   the age of the source frame. Static pixels (velocity 0) are unaffected.
 - `M` toggles it. Off → the target steps at 30 FPS; on → it moves smoothly at
-  display rate. This is primarily a **visual** win (judder → smooth); `W` remains
-  the aim/accuracy win. Together: no warp → laggy aim; `W` → responsive aim,
-  juddery objects; `W`+`M` → responsive aim, smooth objects.
+  display rate. Together: no warp → laggy aim; `W` → responsive aim, juddery
+  objects; `W`+`M` → responsive aim, smooth objects.
+- The **hit test is motion-vector-aware**: when `M` is on, the tested target
+  position is extrapolated by the *same* `velocity × dt` the shader applies to
+  the display, so what you see is what you hit. The two layers compose cleanly —
+  `W` (aim orientation) and `M` (object extrapolation) are independent and never
+  interfere, in all four on/off combinations.
+- **`Shift+M`** drops the source rate to **10 FPS** — at 10 FPS the judder is
+  unmistakable, so the `M` toggle's effect is obvious to any judge.
 
 `main` has the stable single-screen demo without motion vectors.
 
