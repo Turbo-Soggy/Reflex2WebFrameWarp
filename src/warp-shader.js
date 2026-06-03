@@ -64,17 +64,24 @@ export function createWarpMaterial() {
       uniform float uMotionVectors;
       varying vec2 vUv;
 
+      // Trust motion vectors only up to a small displacement (~12px @ 1080p).
+      // Beyond this — high lag / low FPS — extrapolation overshoots and tears, so
+      // we cap the velocity contribution. (The camera term below is NOT clamped.)
+      const float MAX_VEL_CONTRIBUTION = 0.015; // UV
+
       void main() {
         // 1) Map the displayed pixel into the central crop (texture space), then
         //    apply the global CAMERA reprojection (display-UV → texture via uScale).
+        //    This camera term is unclamped (guard-band handles the edges).
         vec2 camSample = uGuard + (vUv + uDelta) * uScale;
 
-        // 2) Per-pixel OBJECT motion: read this pixel's screen velocity from the
-        //    velocity buffer and extrapolate it forward by the frame's age. Static
-        //    pixels read 0.5 → zero velocity → no change. Sampling backward by the
-        //    motion makes the moving object appear at its current position.
-        vec2 vel = texture2D(uVelocityBuffer, clamp(camSample, 0.0, 1.0)).rg; // raw UV/sec
-        vec2 objShift = uMotionVectors * vel * uDeltaTime;
+        // 2) Per-pixel OBJECT motion: read this pixel's screen velocity (raw
+        //    UV/sec; static pixels read 0 → no change), extrapolate by the frame's
+        //    age, then CLAMP the contribution. Sampling backward by the motion
+        //    makes the moving object appear at its current position.
+        vec2 vel = texture2D(uVelocityBuffer, clamp(camSample, 0.0, 1.0)).rg;
+        vec2 velContribution = clamp(vel * uDeltaTime, -MAX_VEL_CONTRIBUTION, MAX_VEL_CONTRIBUTION);
+        vec2 objShift = uMotionVectors * velContribution;
 
         vec2 sampleUV = clamp(camSample - objShift, 0.0, 1.0);
         gl_FragColor = texture2D(tDiffuse, sampleUV);

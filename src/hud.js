@@ -14,6 +14,7 @@ export class HUD {
   constructor() {
     this.el = {
       mode: document.getElementById('hud-mode'),
+      lag: document.getElementById('hud-lag'),
       source: document.getElementById('hud-source'),
       warp: document.getElementById('hud-warp'),
       inputrate: document.getElementById('hud-inputrate'),
@@ -36,7 +37,7 @@ export class HUD {
   addInputEvents(n) { this._pendingInputEvents += n; }
 
   /** Refresh the on-screen text. Cheap to call every frame (DOM touched ~1 Hz). */
-  update(now, { warpEnabled, motionVectorsOn, noWarpMs, warpMs }) {
+  update(now, { warpEnabled, motionVectorsOn, injectedLagMs, noWarpMs, warpMs }) {
     const dt = now - this._lastFlush;
     if (dt < 1000) return;
 
@@ -49,6 +50,7 @@ export class HUD {
       (warpEnabled ? 'Frame Warp: ON' : 'Frame Warp: OFF') + ` · MV: ${motionVectorsOn ? 'ON' : 'OFF'}`;
     this.el.mode.style.color = warpEnabled ? 'var(--accent)' : 'var(--warn)';
 
+    this.el.lag.textContent = injectedLagMs.toFixed(0) + ' ms';
     this.el.source.textContent = sourceFps.toFixed(0) + ' FPS';
     this.el.warp.textContent = warpFps.toFixed(0) + ' FPS';
     this.el.inputrate.textContent = inputHz.toFixed(0) + ' Hz';
