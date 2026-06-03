@@ -41,6 +41,7 @@ export function createWarpMaterial() {
       uVelocityBuffer: { value: null },        // RG screen-velocity (UV/sec), raw signed, 0 = none
       uDeltaTime: { value: 0.0 },              // seconds since the source frame was rendered
       uMotionVectors: { value: 0.0 },          // 0 = off, 1 = on
+      uTexelSize: { value: new THREE.Vector2(1 / 1024, 1 / 1024) }, // 1 / scene-texture size
     },
 
     // Full-screen triangle/quad: position already spans clip space [-1,1],
@@ -62,6 +63,7 @@ export function createWarpMaterial() {
       uniform float uScale;
       uniform float uDeltaTime;
       uniform float uMotionVectors;
+      uniform vec2 uTexelSize;
       varying vec2 vUv;
 
       // Trust motion vectors only up to a small displacement (~12px @ 1080p).
@@ -84,7 +86,27 @@ export function createWarpMaterial() {
         vec2 objShift = uMotionVectors * velContribution;
 
         vec2 sampleUV = clamp(camSample - objShift, 0.0, 1.0);
-        gl_FragColor = texture2D(tDiffuse, sampleUV);
+        vec4 warpedColor = texture2D(tDiffuse, sampleUV);
+
+        // 3) DE-GHOSTING (neighborhood color clamping). Constrain the reprojected
+        //    color to the min/max AABB of the 3x3 neighborhood at the CURRENT
+        //    (un-object-shifted) location, camSample. This removes the bright halo
+        //    where motion-vector warp drags a moving object's color into its
+        //    neighbours. On static / warp-off pixels objShift = 0, so warpedColor
+        //    IS the neighborhood centre and is already within range → a no-op.
+        //    Same neighborhood-clamp idea used by UE5 TAA and DLSS history rejection.
+        vec4 minColor = vec4(1.0);
+        vec4 maxColor = vec4(0.0);
+        for (int x = -1; x <= 1; x++) {
+          for (int y = -1; y <= 1; y++) {
+            vec2 offset = vec2(float(x), float(y)) * uTexelSize;
+            vec4 neighbor = texture2D(tDiffuse, clamp(camSample + offset, 0.0, 1.0));
+            minColor = min(minColor, neighbor);
+            maxColor = max(maxColor, neighbor);
+          }
+        }
+
+        gl_FragColor = clamp(warpedColor, minColor, maxColor);
       }
     `,
 

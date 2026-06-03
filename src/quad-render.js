@@ -27,6 +27,11 @@ export class QuadRenderer {
     this.material.uniforms.uScale.value = 1 - 2 * guard;
   }
 
+  /** Texel size of the scene texture (1/width, 1/height) for the de-ghost pass. */
+  setTexelSize(width, height) {
+    this.material.uniforms.uTexelSize.value.set(1 / width, 1 / height);
+  }
+
   /**
    * Draw the texture to the fullscreen viewport, warped by `delta`.
    * @param renderer  the shared WebGLRenderer

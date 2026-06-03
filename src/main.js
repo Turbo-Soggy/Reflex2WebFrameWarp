@@ -272,6 +272,8 @@ function resize() {
     Math.ceil((w * pr) / uvScale),
     Math.ceil((h * pr) / uvScale)
   );
+  // Keep the de-ghost neighborhood step at one texel of the scene texture.
+  quad.setTexelSize(warpTarget.rt.width, warpTarget.rt.height);
 }
 window.addEventListener('resize', resize);
 resize();
