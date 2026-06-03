@@ -10,13 +10,15 @@
    without external hardware — so we're precise about calling this the
    view-direction component.)
 
-     • LEFT half (no warp): shows the orientation the 3D frame was rendered
-       with. That orientation came from an input sample taken `renderedInputTime`
-       ago, so its latency = now - renderedInputTime  (≈ injected lag + frame wait).
+   We track two series so the chart can show the gap the warp removes:
 
-     • RIGHT half (warp on): the warp re-applies the freshest input every display
-       refresh, so the view direction it shows is at most one display frame old.
-       Its latency = the measured composite frame interval (≈ 16 ms at 60 Hz).
+     • noWarp: the orientation the 3D frame was rendered with came from an input
+       sample taken `renderedInputTime` ago, so its latency = now -
+       renderedInputTime  (≈ injected lag + frame wait).
+
+     • warp: when warp is on, it re-applies the freshest input every display
+       refresh, so the shown view direction is at most one display frame old —
+       its latency = the measured composite frame interval (≈ 16 ms at 60 Hz).
 
    Both numbers are derived from real recorded timestamps, and both behave
    sensibly whether the camera is moving or idle.
@@ -25,16 +27,16 @@
 export class Latency {
   constructor(maxSamples = 240) {
     this.maxSamples = maxSamples;
-    this.left = [];   // ring buffer of left-half latency samples (ms)
-    this.right = [];  // ring buffer of right-half latency samples (ms)
+    this.noWarp = [];   // ring buffer of no-warp latency samples (ms)
+    this.warp = [];     // ring buffer of warp latency samples (ms)
 
     this.renderedInputTime = performance.now();
     this._lastCompositeNow = performance.now();
 
     // Smoothed values for the HUD text (the chart uses the raw buffers).
     // null = not yet initialized (so a legitimate 0 ms isn't mistaken for it).
-    this.smoothLeft = null;
-    this.smoothRight = null;
+    this.smoothNoWarp = null;
+    this.smoothWarp = null;
   }
 
   /** Called when a 3D frame is rendered: pass the input timestamp it used. */
@@ -50,18 +52,18 @@ export class Latency {
     const frameInterval = now - this._lastCompositeNow;
     this._lastCompositeNow = now;
 
-    const left = now - this.renderedInputTime;
-    const right = warpEnabled ? frameInterval : left;
+    const noWarp = now - this.renderedInputTime;
+    const warp = warpEnabled ? frameInterval : noWarp;
 
-    this._push(this.left, left);
-    this._push(this.right, right);
+    this._push(this.noWarp, noWarp);
+    this._push(this.warp, warp);
 
     // Exponential smoothing for a steady on-screen readout.
     const a = 0.1;
-    this.smoothLeft = this.smoothLeft === null ? left : this.smoothLeft * (1 - a) + left * a;
-    this.smoothRight = this.smoothRight === null ? right : this.smoothRight * (1 - a) + right * a;
+    this.smoothNoWarp = this.smoothNoWarp === null ? noWarp : this.smoothNoWarp * (1 - a) + noWarp * a;
+    this.smoothWarp = this.smoothWarp === null ? warp : this.smoothWarp * (1 - a) + warp * a;
 
-    return { left, right };
+    return { noWarp, warp };
   }
 
   _push(buf, v) {

@@ -25,7 +25,7 @@ html, body {
   cursor: default;
 }
 
-/* The canvas fills the whole window; we split it in JS via viewports. */
+/* The single fullscreen canvas. */
 #view {
   display: block;
   width: 100vw;
@@ -52,7 +52,7 @@ html, body {
 .hud-label { color: var(--muted); }
 #hud span:last-child { color: var(--accent); font-variant-numeric: tabular-nums; }
 
-/* ---- Crosshairs (one centered in each split-screen half) ----
+/* ---- Crosshair (centered) ----
    Sharp, gapped cross + a center dot. Crisp 1px lines with a dark drop-shadow
    so they read cleanly over any part of the scene. */
 .crosshair {

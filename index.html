@@ -23,12 +23,13 @@
   <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
-  <!-- The single canvas. We draw BOTH split-screen views onto it. -->
+  <!-- The single fullscreen canvas. -->
   <canvas id="view"></canvas>
 
   <!-- Heads-up display overlay (FPS, latency, current mode). -->
   <div id="hud">
-    <div class="hud-row"><span class="hud-label">Mode</span><span id="hud-mode">Frame Warp: ON</span></div>
+    <div class="hud-row"><span class="hud-label">Mode</span><span id="hud-mode">Frame Warp: OFF · MV: OFF</span></div>
+    <div class="hud-row"><span class="hud-label">Injected lag</span><span id="hud-lag">—</span></div>
     <div class="hud-row"><span class="hud-label">Source FPS</span><span id="hud-source">—</span></div>
     <div class="hud-row"><span class="hud-label">Warp FPS</span><span id="hud-warp">—</span></div>
     <div class="hud-row"><span class="hud-label">Input rate</span><span id="hud-inputrate">—</span></div>
@@ -86,7 +87,7 @@
     <div class="overlay-card">
       <h1>Frame Warp</h1>
       <p>Click to enter. Track the moving targets and click to shoot.</p>
-      <p class="hint"><kbd>Click</kbd> shoot · <kbd>Esc</kbd> release · <kbd>W</kbd> warp on/off · <kbd>D</kbd> demo mode · <kbd>R</kbd>/<kbd>E</kbd> record/export</p>
+      <p class="hint"><kbd>Click</kbd> shoot · <kbd>Esc</kbd> release · <kbd>W</kbd> warp · <kbd>M</kbd> motion vectors · <kbd>Shift+M</kbd> slow-mo · <kbd>D</kbd> demo mode · <kbd>R</kbd>/<kbd>E</kbd> record/export</p>
       <p class="hint">Both sides run at 30 FPS. Press <kbd>W</kbd>: the warp half fires where you <em>are</em> aiming and hits; without it, where you <em>were</em> — and misses.</p>
     </div>
   </div>

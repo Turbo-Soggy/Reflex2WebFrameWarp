@@ -10,12 +10,12 @@
        quad-render.js (quad)    ──┤          [display rate] warp texture → screen
        warp-shader.js (math)    ──┘                         + hud.js (stats)
 
-   The crucial change from Stage 1: rendering happens in TWO phases at TWO
-   different rates.
+   Rendering happens in TWO phases at TWO different rates, onto a single
+   fullscreen viewport:
      • SLOW (30 FPS): draw the 3D scene into an off-screen texture.
-     • FAST (display rate, 60/120/165 Hz): draw that texture to both halves of
-       the split screen — the LEFT unchanged (lagged), the RIGHT reprojected to
-       follow the freshest mouse input.
+     • FAST (display rate, 60/120/165 Hz): draw that texture to the screen,
+       reprojected to follow the freshest mouse input when warp is on. 'W'
+       toggles the warp; the scoreboard compares accuracy with vs without it.
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';
@@ -30,6 +30,7 @@ import { LatencyChart } from './chart.js';
 import { Recorder } from './recorder.js';
 import { Targets } from './targets.js';
 import { shoot } from './raycast.js';
+import { VelocityPass } from './velocity-pass.js';
 
 // --- Display / guard-band geometry constants -------------------------------
 // The FOV the user actually sees. The scene is rendered WIDER than this so the
@@ -73,9 +74,8 @@ renderer.autoClear = true;
 // --- World -----------------------------------------------------------------
 const world = createScene();
 
-// One camera shared by both halves. Aspect is HALF the window width because
-// each split-screen viewport is half-width. It renders at the WIDER guard-band
-// FOV; the shader crops back to the display FOV.
+// The scene camera. Aspect is set to the full window in resize(). It renders at
+// the WIDER guard-band FOV; the shader crops back to the display FOV.
 const camera = new THREE.PerspectiveCamera(renderFovDeg(), 1, 0.1, 200);
 camera.position.set(0, 1.7, 0);
 
@@ -86,6 +86,7 @@ const hud = new HUD();
 const warpTarget = new WarpTarget(1, 1);  // sized properly in resize()
 const quad = new QuadRenderer();
 quad.setGuard(guard);
+const velocityPass = new VelocityPass();
 const latency = new Latency();
 const chart = new LatencyChart(document.getElementById('latency-chart'));
 const recorder = new Recorder();
@@ -103,6 +104,19 @@ let warpEnabled = false;
 // Demo mode hides all the technical readouts and enlarges the score (for
 // non-technical judges). Toggle with 'D'.
 let demoMode = false;
+
+// Motion vectors: the third layer. When OFF, the velocity buffer is ignored and
+// the moving target judders at the 30 FPS source rate. When ON, the velocity
+// pass runs and the warp shader smooths object motion to display rate. Toggle 'M'.
+let motionVectorsOn = false;
+
+// Wall-clock time (ms) of the most recent 30 FPS render — the velocity warp
+// extrapolates object motion forward by (now - this) seconds.
+let lastRenderWallTime = performance.now();
+
+// Slow-motion debug mode (Shift+M): drops the source rate to 10 FPS so the
+// motion-vector effect (judder → smooth) is unmistakable. Restores on toggle.
+let slowMo = false;
 
 // Simple fire cooldown so spam-clicking doesn't muddy the score data.
 const SHOOT_COOLDOWN_MS = 120;
@@ -144,6 +158,19 @@ function fire() {
   const hitTime = (warpEnabled && isTracking) ? lastRenderedElapsed : clock.getElapsedTime();
 
   targets.update(hitTime);
+
+  // Motion-vector-aware hit test: when M is on, shift each tested target by the
+  // SAME velocity × dt the warp shader applies to the DISPLAY (dt = age of the
+  // source frame, identical to the shader's uDeltaTime). This keeps "what you
+  // see = what you hit": W's accuracy story still holds when M is also on, and
+  // the two layers compose cleanly across all four on/off combinations.
+  if (motionVectorsOn) {
+    const dt = Math.max(0, (performance.now() - lastRenderWallTime) / 1000);
+    const vels = targets.getVelocities();
+    for (let i = 0; i < targets.meshes.length; i++) {
+      targets.meshes[i].position.addScaledVector(vels[i], dt);
+    }
+  }
   targets.group.updateMatrixWorld(true);
 
   const hit = shoot(camera.position, yaw, pitch, targets.meshes);
@@ -190,6 +217,7 @@ window.addEventListener('keydown', (e) => {
     case 'w':
       warpEnabled = !warpEnabled;
       scoreboard.setActiveMode(warpEnabled);
+      applyWarpLag(); // OFF → 150 ms, ON → 50 ms (immediate)
       console.log('[FrameWarp] warp', warpEnabled ? 'ENABLED' : 'DISABLED');
       break;
     case 'r':
@@ -203,6 +231,21 @@ window.addEventListener('keydown', (e) => {
       demoMode = !demoMode;
       document.body.classList.toggle('demo-mode', demoMode);
       console.log('[FrameWarp] demo mode', demoMode ? 'ON (scores only)' : 'OFF (tech readouts)');
+      break;
+    case 'm':
+      if (e.shiftKey) {
+        // Shift+M: toggle slow-mo by driving the Source-rate slider (keeps the
+        // panel, label and LagSim in sync via the normal slider path).
+        const sl = document.getElementById('sl-hz');
+        slowMo = !slowMo;
+        if (slowMo) { sl.dataset.prev = sl.value; sl.value = '10'; }
+        else { sl.value = sl.dataset.prev || '30'; }
+        sl.dispatchEvent(new Event('input', { bubbles: true }));
+        console.log('[FrameWarp] slow-mo', slowMo ? 'ON (10 FPS)' : 'OFF');
+      } else {
+        motionVectorsOn = !motionVectorsOn;
+        console.log('[FrameWarp] motion vectors', motionVectorsOn ? 'ON' : 'OFF');
+      }
       break;
   }
 });
@@ -229,6 +272,8 @@ function resize() {
     Math.ceil((w * pr) / uvScale),
     Math.ceil((h * pr) / uvScale)
   );
+  // Keep the de-ghost neighborhood step at one texel of the scene texture.
+  quad.setTexelSize(warpTarget.rt.width, warpTarget.rt.height);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -258,6 +303,19 @@ function wireSlider(sliderId, valueId, onChange, fmt = (v) => v) {
 wireSlider('sl-lag', 'val-lag', (v) => { lag.lagMs = v; });
 wireSlider('sl-hz', 'val-hz', (v) => { lag.setRenderHz(v); });
 wireSlider('sl-guard', 'val-guard', (v) => { applyGuard(v); });
+
+// Warp drives the injected lag so the contrast is unmistakable without the judge
+// having to be a skilled tracker: warp OFF → a clearly-broken 150 ms, warp ON →
+// a crisp 50 ms, applied immediately. Driving the slider keeps the panel label,
+// the HUD and the LagSim all in sync.
+const _slLag = document.getElementById('sl-lag');
+function applyWarpLag() {
+  _slLag.value = warpEnabled ? '50' : '150';
+  _slLag.dispatchEvent(new Event('input', { bubbles: true }));
+  // The HUD text only flushes at ~1 Hz; reflect the new lag immediately too.
+  document.getElementById('hud-lag').textContent = _slLag.value + ' ms';
+}
+applyWarpLag(); // initialise: warp starts off → 150 ms
 
 // --- Orientation helper ----------------------------------------------------
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -302,10 +360,19 @@ function frame() {
     renderer.render(world.scene, camera);
     renderer.setRenderTarget(null);
 
+    // Motion-vector pass: write each target's screen velocity into the velocity
+    // buffer (same camera, same 30 FPS). Only when enabled — otherwise the warp
+    // shader ignores it anyway. Targets are already at their lagged positions
+    // and their velocities were stored by the update() above.
+    if (motionVectorsOn) {
+      velocityPass.render(renderer, warpTarget.velocityRT, camera, targets.meshes, targets.getVelocities());
+    }
+    lastRenderWallTime = now; // the buffers are now "fresh" as of this tick
+
     hud.countSceneFrame();
   }
 
-  // 3) FAST CLOCK (display rate): composite the texture to both halves.
+  // 3) FAST CLOCK (display rate): composite the texture to the screen.
   //    Compute how far the camera has rotated SINCE the frame was rendered, and
   //    convert that angular motion into a texture-space shift via the FOV.
   const fresh = input.snapshot();
@@ -322,9 +389,15 @@ function frame() {
   const dv =  dPitch / fovY;
 
   // Single fullscreen viewport. Warp ON reprojects toward the freshest input;
-  // warp OFF shows the raw lagged frame (zero shift).
+  // warp OFF shows the raw lagged frame (zero shift). The motion-vector inputs
+  // smooth moving objects per-pixel when enabled (dt = age of the source frame).
   const delta = warpEnabled ? [du, dv] : [0, 0];
-  quad.render(renderer, warpTarget.texture, delta, 0, fullW, fullH);
+  const mv = {
+    texture: warpTarget.velocityTexture,
+    dtSeconds: Math.max(0, (now - lastRenderWallTime) / 1000),
+    enabled: motionVectorsOn,
+  };
+  quad.render(renderer, warpTarget.texture, delta, fullW, fullH, mv);
 
   hud.countCompositeFrame();
 
@@ -335,14 +408,16 @@ function frame() {
     injectedLagMs: lag.lagMs,
     sourceHz: 1000 / lag.renderInterval,
     guardPct: guard * 100,
-    leftMs: lat.left,
-    rightMs: lat.right,
+    noWarpMs: lat.noWarp,
+    warpMs: lat.warp,
   });
-  chart.draw(now, latency.left, latency.right);
+  chart.draw(now, latency.noWarp, latency.warp);
   hud.update(now, {
     warpEnabled,
-    leftMs: latency.smoothLeft,
-    rightMs: latency.smoothRight,
+    motionVectorsOn,
+    injectedLagMs: lag.lagMs,
+    noWarpMs: latency.smoothNoWarp,
+    warpMs: latency.smoothWarp,
   });
   if (recorder.recording) updateRecIndicator(); // live sample count
 }
@@ -350,7 +425,8 @@ function frame() {
 frame();
 
 window.FrameWarp = { renderer, camera, world, input, lag, warpTarget, quad, latency, recorder,
-  targets, scoreboard, fire,
+  targets, scoreboard, velocityPass, fire,
   get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
+  get motionVectorsOn() { return motionVectorsOn; }, set motionVectorsOn(v) { motionVectorsOn = v; },
   get guard() { return guard; } };
-console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp R=record E=export D=demo-mode.');
+console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors (Shift+M=slow-mo) R=record E=export D=demo-mode.');

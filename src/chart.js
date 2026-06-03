@@ -9,8 +9,8 @@
 --------------------------------------------------------------------------- */
 
 const COLORS = {
-  left: '#ff7a5c',   // lagged
-  right: '#4cc2ff',  // warped
+  noWarp: '#ff7a5c',
+  warp: '#4cc2ff',
   grid: 'rgba(255,255,255,0.08)',
   text: '#8b97a7',
 };
@@ -24,7 +24,7 @@ export class LatencyChart {
   }
 
   /** Draw the two latency series. Throttled internally to ~30 Hz. */
-  draw(now, leftSeries, rightSeries) {
+  draw(now, noWarpSeries, warpSeries) {
     if (now - this._lastDraw < 33) return;
     this._lastDraw = now;
 
@@ -52,8 +52,8 @@ export class LatencyChart {
       ctx.fillText(ms.toString(), padL - 5, y);
     }
 
-    this._line(leftSeries, COLORS.left, padL, padT, plotW, plotH);
-    this._line(rightSeries, COLORS.right, padL, padT, plotW, plotH);
+    this._line(noWarpSeries, COLORS.noWarp, padL, padT, plotW, plotH);
+    this._line(warpSeries, COLORS.warp, padL, padT, plotW, plotH);
   }
 
   _line(series, color, padL, padT, plotW, plotH) {
