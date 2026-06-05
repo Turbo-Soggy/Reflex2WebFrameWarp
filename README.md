@@ -119,7 +119,21 @@ proves it (`raycast.js`, `targets.js`, and `fire()` in `main.js`).
 it with warp on, then off, or at different lag settings), press `R` again, then
 `E` to download a CSV of timestamped latency measurements you can chart.
 
----
+### Measurement caveat (read before quoting the numbers)
+
+The chart and CSV report **view-direction latency**, and the two series are *not*
+symmetric measurements — be honest about this in the write-up:
+
+- **No-warp** is a real measured quantity: `now − (timestamp of the input the
+  displayed frame was rendered with)` — i.e. how stale the shown view direction is.
+- **Warp** is the **display-frame interval** — a *proxy floor* for "the warp
+  re-applies the freshest input every refresh, so the view is at most one frame
+  old." It is **not** a hardware motion-to-photon measurement: it excludes mouse
+  polling, GPU queue, and scanout, none of which a browser can observe without
+  external instrumentation (e.g. a high-speed camera on the panel).
+
+So the chart shows the *view-direction* latency the warp removes, not absolute
+end-to-end MtP. Treat the warp line as a lower bound, and say so when presenting.
 
 ## What each file does (study order)
 

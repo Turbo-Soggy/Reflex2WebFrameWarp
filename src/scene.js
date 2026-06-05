@@ -119,16 +119,16 @@ export function createScene() {
 
 /* --- Procedural textures (canvas-baked, no downloads) --------------------- */
 
-function baseConcrete(ctx, size, hex) {
-  const base = '#' + hex.toString(16).padStart(6, '0');
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, size, size);
-  // speckle for a concrete feel
-  for (let i = 0; i < size * 6; i++) {
-    const x = Math.random() * size, y = Math.random() * size;
-    const v = (Math.random() - 0.5) * 26;
-    ctx.fillStyle = `rgba(${v > 0 ? 255 : 0},${v > 0 ? 255 : 0},${v > 0 ? 255 : 0},${Math.abs(v) / 255})`;
-    ctx.fillRect(x, y, 1.5, 1.5);
+// Fill a canvas with a flat base colour plus subtle light/dark speckle, for a
+// concrete feel. Works for any rectangle; pass (size, size) for a square.
+function baseConcrete(ctx, w, h, hex) {
+  ctx.fillStyle = '#' + hex.toString(16).padStart(6, '0');
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < (w * h) / 200; i++) {
+    const x = Math.random() * w, y = Math.random() * h;
+    const up = Math.random() > 0.5;
+    ctx.fillStyle = up ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
+    ctx.fillRect(x, y, 2, 2);
   }
 }
 
@@ -136,7 +136,7 @@ function makeConcreteTexture(hex) {
   const size = 256;
   const c = document.createElement('canvas');
   c.width = c.height = size;
-  baseConcrete(c.getContext('2d'), size, hex);
+  baseConcrete(c.getContext('2d'), size, size, hex);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -150,7 +150,7 @@ function makeFloorTexture() {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
-  baseConcrete2(ctx, w, h, 0x343b45);
+  baseConcrete(ctx, w, h, 0x343b45);
 
   // lane lines (vertical in texture = along range depth)
   ctx.strokeStyle = 'rgba(190,205,225,0.40)';
@@ -176,25 +176,13 @@ function makeFloorTexture() {
   return tex;
 }
 
-function baseConcrete2(ctx, w, h, hex) {
-  const base = '#' + hex.toString(16).padStart(6, '0');
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, w, h);
-  for (let i = 0; i < w * h / 200; i++) {
-    const x = Math.random() * w, y = Math.random() * h;
-    const up = Math.random() > 0.5;
-    ctx.fillStyle = up ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
-    ctx.fillRect(x, y, 2, 2);
-  }
-}
-
 /* Back wall: concrete + faint horizontal track guides at the target heights. */
 function makeBackWallTexture() {
   const w = 512, h = 256;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
-  baseConcrete2(ctx, w, h, 0x434a55);
+  baseConcrete(ctx, w, h, 0x434a55);
   ctx.strokeStyle = 'rgba(150,170,195,0.30)';
   ctx.lineWidth = 2;
   for (const fy of [0.35, 0.6]) { // track rails

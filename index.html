@@ -53,7 +53,7 @@
   <!-- Hit/miss feedback ("hitmarker") flashed at the crosshair. -->
   <div id="feedback" class="feedback"></div>
 
-  <!-- Live latency chart: lagged (orange) vs warped (blue) over time. -->
+  <!-- Live latency chart: no-warp (orange) vs warp (blue) over time. -->
   <div id="chart-panel">
     <div class="chart-title">View-direction latency (ms, measured)</div>
     <canvas id="latency-chart" width="280" height="120"></canvas>
@@ -62,6 +62,8 @@
       <span><i class="swatch" style="background:#4cc2ff"></i>Warp</span>
       <span id="rec-indicator">press R to record</span>
     </div>
+    <div class="chart-note">No-warp = measured frame age. Warp = display-frame
+      interval (a proxy floor, not hardware motion-to-photon). See README.</div>
   </div>
 
   <!-- Parameter panel: examiners can change the experiment live. Press Esc to

@@ -61,9 +61,42 @@ function renderFovDeg() {
   );
 }
 
+// --- Capability check ------------------------------------------------------
+// This demo needs WebGL and a mouse (pointer lock). Fail loudly and politely
+// rather than crashing with a cryptic error on an unsupported device.
+function showUnsupported(message) {
+  const overlay = document.getElementById('overlay');
+  if (overlay) {
+    overlay.classList.remove('hidden');
+    overlay.style.cursor = 'default';
+    overlay.innerHTML =
+      `<div class="overlay-card"><h1>Frame Warp</h1>` +
+      `<p>${message}</p>` +
+      `<p class="hint">Open it on a desktop browser (Chrome/Edge/Firefox) with WebGL enabled.</p></div>`;
+  }
+}
+function webglAvailable() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
+  } catch (e) {
+    return false;
+  }
+}
+if (!webglAvailable()) {
+  showUnsupported('This demo requires WebGL, which your browser/device doesn’t support.');
+  throw new Error('[FrameWarp] WebGL unavailable — halting.');
+}
+
 // --- Renderer --------------------------------------------------------------
 const canvas = document.getElementById('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+} catch (e) {
+  showUnsupported('Could not create a WebGL context.');
+  throw e;
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -181,6 +214,10 @@ function fire() {
 
   scoreboard.registerShot(warpEnabled, !!hit);
   pulseCrosshair();
+
+  // The instruction has served its purpose once you've taken a shot — fade it.
+  const hint = document.getElementById('play-hint');
+  if (hint) hint.classList.add('faded');
 }
 
 document.addEventListener('mousedown', (e) => {
@@ -424,9 +461,14 @@ function frame() {
 
 frame();
 
-window.FrameWarp = { renderer, camera, world, input, lag, warpTarget, quad, latency, recorder,
-  targets, scoreboard, velocityPass, fire,
-  get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
-  get motionVectorsOn() { return motionVectorsOn; }, set motionVectorsOn(v) { motionVectorsOn = v; },
-  get guard() { return guard; } };
+// Debug namespace — exposed only with ?debug in the URL, so the shipped demo
+// doesn't leak internals to the console (or pin the module graph in memory).
+if (new URLSearchParams(location.search).has('debug')) {
+  window.FrameWarp = { renderer, camera, world, input, lag, warpTarget, quad, latency, recorder,
+    targets, scoreboard, velocityPass, fire,
+    get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
+    get motionVectorsOn() { return motionVectorsOn; }, set motionVectorsOn(v) { motionVectorsOn = v; },
+    get guard() { return guard; } };
+  console.log('[FrameWarp] debug namespace exposed as window.FrameWarp');
+}
 console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors (Shift+M=slow-mo) R=record E=export D=demo-mode.');
