@@ -29,8 +29,10 @@ import { Latency } from './latency.js';
 import { LatencyChart } from './chart.js';
 import { Recorder } from './recorder.js';
 import { Targets } from './targets.js';
-import { shoot } from './raycast.js';
 import { VelocityPass } from './velocity-pass.js';
+import { renderFovDeg } from './projection.js';
+import { createShooter } from './shooter.js';
+import { installControls } from './controls.js';
 
 // --- Display / guard-band geometry constants -------------------------------
 // The FOV the user actually sees. The scene is rendered WIDER than this so the
@@ -53,13 +55,8 @@ const DISPLAY_FOV_Y = 75;          // degrees (constant — what the user sees)
 let guard = 0.12;                  // guard-band margin per side, texture-relative
 let uvScale = 1 - 2 * guard;       // fraction of the texture we display (0.76)
 
-// Wider render FOV (degrees) whose central uvScale crop equals DISPLAY_FOV_Y.
-// Tangent-exact crop relationship (perspective is linear in tan(angle)).
-function renderFovDeg() {
-  return THREE.MathUtils.radToDeg(
-    2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(DISPLAY_FOV_Y) / 2) / uvScale)
-  );
-}
+// Wider render FOV whose central uvScale crop equals DISPLAY_FOV_Y — the
+// tangent-exact relationship lives in projection.js (pure + unit-tested).
 
 // --- Capability check ------------------------------------------------------
 // This demo needs WebGL and a mouse (pointer lock). Fail loudly and politely
@@ -109,7 +106,7 @@ const world = createScene();
 
 // The scene camera. Aspect is set to the full window in resize(). It renders at
 // the WIDER guard-band FOV; the shader crops back to the display FOV.
-const camera = new THREE.PerspectiveCamera(renderFovDeg(), 1, 0.1, 200);
+const camera = new THREE.PerspectiveCamera(renderFovDeg(DISPLAY_FOV_Y, uvScale), 1, 0.1, 200);
 camera.position.set(0, 1.7, 0);
 
 // --- Subsystems ------------------------------------------------------------
@@ -151,12 +148,8 @@ let lastRenderWallTime = performance.now();
 // motion-vector effect (judder → smooth) is unmistakable. Restores on toggle.
 let slowMo = false;
 
-// Simple fire cooldown so spam-clicking doesn't muddy the score data.
-const SHOOT_COOLDOWN_MS = 120;
-let lastShot = -Infinity;
-
 // The elapsed time (scene clock) at the most recent 30 FPS render tick.
-// Used by fire() to restore target positions after real-time hit testing.
+// Used by the shooter to restore target positions after real-time hit testing.
 let lastRenderedElapsed = 0;
 
 // --- Pointer-lock overlay --------------------------------------------------
@@ -166,127 +159,8 @@ document.addEventListener('pointerlockchange', () => {
   overlay.classList.toggle('hidden', input.locked);
 });
 
-// --- Shooting --------------------------------------------------------------
-// Single fullscreen viewport: one click fires ONE shot, from the orientation the
-// screen is currently DISPLAYING. With warp ON the screen is reprojected to the
-// current orientation, so the crosshair points where you're aiming NOW → hit.
-// With warp OFF the screen shows the lagged orientation, so the crosshair points
-// where you WERE aiming ~95 ms ago → miss while you're tracking a moving target.
-// The result is scored into the matching mode bucket so the comparison persists.
-function fire() {
-  const yaw   = input.yaw;
-  const pitch = input.pitch;
-
-  // For the thesis demo, we need two contradictory physical behaviors:
-  // 1. Ambush shots must MISS (strict physics: target has moved on).
-  // 2. Warp ON tracking shots must HIT (requires lag compensation, otherwise aiming at the stale visual target misses).
-  // 
-  // We can achieve both perfectly by detecting if the user is tracking vs ambushing.
-  // Since renderedYaw is from ~130ms ago, the difference between current yaw and renderedYaw
-  // is large when tracking, and zero when stationary.
-  const dYaw = Math.abs(yaw - warpTarget.renderedYaw);
-  const isTracking = dYaw > 0.01;
-
-  // Apply lag compensation ONLY when Warp is ON and you are tracking.
-  const hitTime = (warpEnabled && isTracking) ? lastRenderedElapsed : clock.getElapsedTime();
-
-  targets.update(hitTime);
-
-  // Motion-vector-aware hit test: when M is on, shift each tested target by the
-  // SAME velocity × dt the warp shader applies to the DISPLAY (dt = age of the
-  // source frame, identical to the shader's uDeltaTime). This keeps "what you
-  // see = what you hit": W's accuracy story still holds when M is also on, and
-  // the two layers compose cleanly across all four on/off combinations.
-  if (motionVectorsOn) {
-    const dt = Math.max(0, (performance.now() - lastRenderWallTime) / 1000);
-    const vels = targets.getVelocities();
-    for (let i = 0; i < targets.meshes.length; i++) {
-      targets.meshes[i].position.addScaledVector(vels[i], dt);
-    }
-  }
-  targets.group.updateMatrixWorld(true);
-
-  const hit = shoot(camera.position, yaw, pitch, targets.meshes);
-
-  // Restore targets to the displayed (lagged) positions so the render loop
-  // doesn't stutter.
-  targets.update(lastRenderedElapsed);
-
-  scoreboard.registerShot(warpEnabled, !!hit);
-  pulseCrosshair();
-
-  // The instruction has served its purpose once you've taken a shot — fade it.
-  const hint = document.getElementById('play-hint');
-  if (hint) hint.classList.add('faded');
-}
-
-document.addEventListener('mousedown', (e) => {
-  if (!input.locked || e.button !== 0) return;
-  const now = performance.now();
-  if (now - lastShot < SHOOT_COOLDOWN_MS) return;
-  lastShot = now;
-  fire();
-});
-
-const crosshair = document.getElementById('crosshair');
-function pulseCrosshair() {
-  crosshair.classList.remove('shoot');
-  void crosshair.offsetWidth; // restart the animation
-  crosshair.classList.add('shoot');
-}
-
-// --- Keyboard --------------------------------------------------------------
-const recEl = document.getElementById('rec-indicator');
-function updateRecIndicator() {
-  if (recorder.recording) {
-    recEl.textContent = `● REC  ${recorder.sampleCount}`;
-    recEl.classList.add('active');
-  } else {
-    recEl.textContent = recorder.sampleCount
-      ? `${recorder.sampleCount} samples — press E to export`
-      : 'press R to record';
-    recEl.classList.remove('active');
-  }
-}
-
-window.addEventListener('keydown', (e) => {
-  switch (e.key.toLowerCase()) {
-    case 'w':
-      warpEnabled = !warpEnabled;
-      scoreboard.setActiveMode(warpEnabled);
-      applyWarpLag(); // OFF → 150 ms, ON → 50 ms (immediate)
-      console.log('[FrameWarp] warp', warpEnabled ? 'ENABLED' : 'DISABLED');
-      break;
-    case 'r':
-      console.log('[FrameWarp] recording', recorder.toggle(performance.now()) ? 'STARTED' : 'STOPPED');
-      updateRecIndicator();
-      break;
-    case 'e':
-      recorder.download();
-      break;
-    case 'd':
-      demoMode = !demoMode;
-      document.body.classList.toggle('demo-mode', demoMode);
-      console.log('[FrameWarp] demo mode', demoMode ? 'ON (scores only)' : 'OFF (tech readouts)');
-      break;
-    case 'm':
-      if (e.shiftKey) {
-        // Shift+M: toggle slow-mo by driving the Source-rate slider (keeps the
-        // panel, label and LagSim in sync via the normal slider path).
-        const sl = document.getElementById('sl-hz');
-        slowMo = !slowMo;
-        if (slowMo) { sl.dataset.prev = sl.value; sl.value = '10'; }
-        else { sl.value = sl.dataset.prev || '30'; }
-        sl.dispatchEvent(new Event('input', { bubbles: true }));
-        console.log('[FrameWarp] slow-mo', slowMo ? 'ON (10 FPS)' : 'OFF');
-      } else {
-        motionVectorsOn = !motionVectorsOn;
-        console.log('[FrameWarp] motion vectors', motionVectorsOn ? 'ON' : 'OFF');
-      }
-      break;
-  }
-});
-updateRecIndicator();
+// (Shooting lives in shooter.js; keyboard + the recording indicator live in
+//  controls.js. Both are wired up below, after the state they touch exists.)
 
 // --- Resize handling -------------------------------------------------------
 let fullW = 1, fullH = 1;
@@ -319,7 +193,7 @@ resize();
 function applyGuard(pct) {
   guard = pct / 100;
   uvScale = 1 - 2 * guard;
-  camera.fov = renderFovDeg();
+  camera.fov = renderFovDeg(DISPLAY_FOV_Y, uvScale);
   camera.updateProjectionMatrix();
   quad.setGuard(guard);
   resize(); // re-sizes the render target for the new margin
@@ -363,6 +237,23 @@ function setCameraOrientation(yaw, pitch) {
 
 // --- The main loop ---------------------------------------------------------
 const clock = new THREE.Clock();
+
+// Wire up shooting and controls. They read/write the app state through these
+// accessors, so this file keeps owning the state and the loop is untouched.
+const shooter = createShooter({
+  input, warpTarget, targets, camera, scoreboard, clock,
+  getWarpEnabled: () => warpEnabled,
+  getMotionVectorsOn: () => motionVectorsOn,
+  getLastRenderedElapsed: () => lastRenderedElapsed,
+  getLastRenderWallTime: () => lastRenderWallTime,
+});
+const controls = installControls({
+  scoreboard, recorder, applyWarpLag,
+  getWarpEnabled: () => warpEnabled, setWarpEnabled: (v) => { warpEnabled = v; },
+  getMotionVectorsOn: () => motionVectorsOn, setMotionVectorsOn: (v) => { motionVectorsOn = v; },
+  getDemoMode: () => demoMode, setDemoMode: (v) => { demoMode = v; },
+  getSlowMo: () => slowMo, setSlowMo: (v) => { slowMo = v; },
+});
 
 function frame() {
   requestAnimationFrame(frame);
@@ -456,7 +347,7 @@ function frame() {
     noWarpMs: latency.smoothNoWarp,
     warpMs: latency.smoothWarp,
   });
-  if (recorder.recording) updateRecIndicator(); // live sample count
+  if (recorder.recording) controls.updateRecIndicator(); // live sample count
 }
 
 frame();
@@ -465,7 +356,7 @@ frame();
 // doesn't leak internals to the console (or pin the module graph in memory).
 if (new URLSearchParams(location.search).has('debug')) {
   window.FrameWarp = { renderer, camera, world, input, lag, warpTarget, quad, latency, recorder,
-    targets, scoreboard, velocityPass, fire,
+    targets, scoreboard, velocityPass, fire: shooter.fire,
     get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
     get motionVectorsOn() { return motionVectorsOn; }, set motionVectorsOn(v) { motionVectorsOn = v; },
     get guard() { return guard; } };

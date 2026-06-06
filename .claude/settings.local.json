@@ -15,7 +15,11 @@
       "Bash(curl -s -I http://localhost:8000/src/main.js)",
       "Bash(curl -s -o /dev/null -w 'req__TRACKED_VAR__: %{http_code}\\\\n' http://localhost:8000/src/lag.js)",
       "Bash(git add *)",
-      "Bash(git -c user.name=Isaac -c user.email=isaac.ibddavid@gmail.com commit -q -m ' *)"
+      "Bash(git -c user.name=Isaac -c user.email=isaac.ibddavid@gmail.com commit -q -m ' *)",
+      "Bash(node --input-type=module -e \"import\\('./vendor/three/three.module.js'\\).then\\(m=>{const T=m; const v=new T.Vector3\\(1,2,3\\); console.log\\('THREE OK, Vector3 length:', v.length\\(\\).toFixed\\(4\\), 'Raycaster?', typeof T.Raycaster, 'Mesh?', typeof T.Mesh, 'CircleGeometry?', typeof T.CircleGeometry\\);}\\).catch\\(e=>console.log\\('THREE IMPORT FAILED:', e.message\\)\\);\")",
+      "Bash(npm install *)",
+      "Bash(node --input-type=module -e \"import\\('three'\\).then\\(m=>console.log\\('bare three resolves in Node:', typeof m.Raycaster\\)\\).catch\\(e=>console.log\\('FAIL',e.message\\)\\)\")",
+      "Bash(npm test *)"
     ]
   }
 }
