@@ -33,6 +33,7 @@ import { VelocityPass } from './velocity-pass.js';
 import { renderFovDeg } from './projection.js';
 import { createShooter } from './shooter.js';
 import { installControls } from './controls.js';
+import { TraceRecorder } from './replay/trace.js';
 
 // --- Display / guard-band geometry constants -------------------------------
 // The FOV the user actually sees. The scene is rendered WIDER than this so the
@@ -120,6 +121,7 @@ const velocityPass = new VelocityPass();
 const latency = new Latency();
 const chart = new LatencyChart(document.getElementById('latency-chart'));
 const recorder = new Recorder();
+const traceRecorder = new TraceRecorder(); // input traces for the replay system ('T')
 
 // Shooter: moving targets added into the scene, plus the score overlay.
 const targets = new Targets(world.range);
@@ -248,7 +250,7 @@ const shooter = createShooter({
   getLastRenderWallTime: () => lastRenderWallTime,
 });
 const controls = installControls({
-  scoreboard, recorder, applyWarpLag,
+  scoreboard, recorder, traceRecorder, applyWarpLag,
   getWarpEnabled: () => warpEnabled, setWarpEnabled: (v) => { warpEnabled = v; },
   getMotionVectorsOn: () => motionVectorsOn, setMotionVectorsOn: (v) => { motionVectorsOn = v; },
   getDemoMode: () => demoMode, setDemoMode: (v) => { demoMode = v; },
@@ -261,7 +263,9 @@ function frame() {
 
   // 1) FAST CLOCK: capture freshest input every tick.
   hud.addInputEvents(input.drainEventCount());
-  lag.record(now, input.snapshot());
+  const snap = input.snapshot();
+  lag.record(now, snap);
+  traceRecorder.capture(now, snap.yaw, snap.pitch); // no-op unless recording
   const elapsed = clock.getElapsedTime();
   world.update(elapsed);
 
@@ -356,10 +360,10 @@ frame();
 // doesn't leak internals to the console (or pin the module graph in memory).
 if (new URLSearchParams(location.search).has('debug')) {
   window.FrameWarp = { renderer, camera, world, input, lag, warpTarget, quad, latency, recorder,
-    targets, scoreboard, velocityPass, fire: shooter.fire,
+    traceRecorder, targets, scoreboard, velocityPass, fire: shooter.fire,
     get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
     get motionVectorsOn() { return motionVectorsOn; }, set motionVectorsOn(v) { motionVectorsOn = v; },
     get guard() { return guard; } };
   console.log('[FrameWarp] debug namespace exposed as window.FrameWarp');
 }
-console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors (Shift+M=slow-mo) R=record E=export D=demo-mode.');
+console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors (Shift+M=slow-mo) R=record E=export T=input-trace D=demo-mode.');

@@ -22,6 +22,13 @@ import { shoot } from '../src/raycast.js';
 import { TAG, idToBits, bitsToId, cellRect } from '../src/cloud/frame-tag.js';
 import { PoseSync } from '../src/cloud/pose-sync.js';
 import { CloudRecorder, percentile } from '../src/cloud/cloud-recorder.js';
+import {
+  validateTrace, poseAt, TraceRecorder,
+  synthConstantVelocity, synthSineSweep, synthWander,
+} from '../src/replay/trace.js';
+import {
+  simulate, resultToCSV, clampOnsetBoundsDegPerSec,
+} from '../src/replay/pipeline-sim.js';
 
 // --- tiny green/red harness ------------------------------------------------
 let passed = 0, failed = 0;
@@ -280,6 +287,105 @@ test('CSV summary reports perceived latency per warp mode', () => {
   assert.ok(csv.includes('# warp_off,3,200.00,300.00,300.00'), 'warp-off summary row');
   assert.ok(csv.includes('# warp_on,2,10.00,15.00,15.00'), 'warp-on summary row');
   assert.equal(rec.sampleCount, 5);
+});
+
+// ===========================================================================
+section('input traces (replay/trace.js)');
+
+test('poseAt is zero-order hold (newest sample at or before t)', () => {
+  const trace = validateTrace({
+    version: 1, name: 't', createdAt: 'x',
+    samples: [{ t: 0, yaw: 0, pitch: 0 }, { t: 100, yaw: 1, pitch: 0 }, { t: 200, yaw: 2, pitch: 0 }],
+  });
+  assert.equal(poseAt(trace, -5).yaw, 0);   // before start → first sample
+  assert.equal(poseAt(trace, 50).yaw, 0);
+  assert.equal(poseAt(trace, 100).yaw, 1);  // exactly on a sample
+  assert.equal(poseAt(trace, 150).yaw, 1);
+  assert.equal(poseAt(trace, 999).yaw, 2);  // past the end → last sample
+});
+
+test('validateTrace rejects malformed traces', () => {
+  assert.throws(() => validateTrace({ version: 1, samples: [] }));
+  assert.throws(() => validateTrace({
+    version: 1, samples: [{ t: 100, yaw: 0, pitch: 0 }, { t: 50, yaw: 0, pitch: 0 }],
+  }), /backwards/);
+  assert.throws(() => validateTrace({
+    version: 1, samples: [{ t: 0, yaw: NaN, pitch: 0 }],
+  }), /non-finite/);
+});
+
+test('TraceRecorder skips consecutive identical poses (ZOH makes them redundant)', () => {
+  const rec = new TraceRecorder();
+  rec.toggle(1000);
+  rec.capture(1000, 0, 0);
+  rec.capture(1016, 0, 0);    // unchanged → skipped
+  rec.capture(1033, 0.1, 0);
+  assert.equal(rec.samples.length, 2);
+  assert.equal(rec.samples[1].t, 33); // timestamps are trace-relative
+});
+
+test('synthetic traces are deterministic (same seed → identical trace)', () => {
+  const a = JSON.stringify(synthWander({ seed: 7, durationMs: 2000 }));
+  const b = JSON.stringify(synthWander({ seed: 7, durationMs: 2000 }));
+  const c = JSON.stringify(synthWander({ seed: 8, durationMs: 2000 }));
+  assert.equal(a, b);
+  assert.notEqual(a, c);
+});
+
+// ===========================================================================
+section('pipeline simulator (replay/pipeline-sim.js)');
+
+test('simulate is bit-reproducible: same trace + config → identical CSV', () => {
+  const trace = synthWander({ seed: 3, durationMs: 3000 });
+  const csv1 = resultToCSV(simulate(trace, { lagMs: 80 }));
+  const csv2 = resultToCSV(simulate(trace, { lagMs: 80 }));
+  assert.equal(csv1, csv2); // the Phase 1 exit criterion, byte for byte
+});
+
+test('steady-state staleness lies in [lag, lag + render interval + display tick]', () => {
+  // Renders only happen on display ticks, so a frame can be replaced one tick
+  // late — the age bound carries that extra display-tick term (see
+  // clampOnsetBoundsDegPerSec). renderHz 30, displayHz 60 → 80 + 33.3 + 16.7.
+  const trace = synthConstantVelocity({ degPerSec: 90, durationMs: 5000 });
+  const { summary } = simulate(trace, { lagMs: 80 });
+  assert.ok(summary.stalenessMs.max <= 80 + 1000 / 30 + 1000 / 60 + 0.01,
+    `max staleness ${summary.stalenessMs.max} exceeds the analytic age bound`);
+  assert.ok(summary.stalenessMs.mean >= 80,
+    `mean staleness ${summary.stalenessMs.mean} below the injected lag`);
+});
+
+test('warp error is zero below clamp onset, nonzero above it', () => {
+  const bounds = clampOnsetBoundsDegPerSec({});
+  const slow = simulate(synthConstantVelocity({ degPerSec: 0.9 * bounds.lowerDegPerSec }), {});
+  assert.equal(slow.summary.clampRate, 0);
+  approx(slow.summary.errWarpDeg.max, 0, 1e-9); // full compensation
+  assert.ok(slow.summary.errNoWarpDeg.mean > 5, 'no-warp error should be large');
+  const fast = simulate(synthConstantVelocity({ degPerSec: 1.1 * bounds.upperDegPerSec }), {});
+  assert.ok(fast.summary.clampRate > 0, 'expected clamping above the upper bound');
+  assert.ok(fast.summary.errWarpDeg.max > 0, 'clamped warp must leave residual error');
+});
+
+test('measured clamp onset falls within the analytic bounds (theory ↔ instrument)', () => {
+  const bounds = clampOnsetBoundsDegPerSec({});
+  let onset = null;
+  for (let v = Math.floor(0.8 * bounds.lowerDegPerSec); v <= 1.2 * bounds.upperDegPerSec; v += 2) {
+    const { summary } = simulate(synthConstantVelocity({ degPerSec: v, durationMs: 3000 }), {});
+    if (summary.clampRate > 0) { onset = v; break; }
+  }
+  assert.ok(onset !== null, 'no clamp onset found in the sweep');
+  assert.ok(onset >= bounds.lowerDegPerSec - 2 && onset <= bounds.upperDegPerSec + 2,
+    `onset ${onset} deg/s outside analytic [${bounds.lowerDegPerSec.toFixed(1)}, ` +
+    `${bounds.upperDegPerSec.toFixed(1)}]`);
+});
+
+test('no-warp error grows with lag; warp error stays flat (the thesis, headless)', () => {
+  const trace = synthSineSweep({ amplitudeDeg: 30, freqHz: 0.5, durationMs: 5000 });
+  const low = simulate(trace, { lagMs: 40 }).summary;
+  const high = simulate(trace, { lagMs: 120 }).summary;
+  assert.ok(high.errNoWarpDeg.mean > low.errNoWarpDeg.mean * 1.5,
+    'no-warp error should scale with injected lag');
+  approx(low.errWarpDeg.max, 0, 1e-9);   // peak sine velocity ~94 deg/s,
+  approx(high.errWarpDeg.max, 0, 1e-9);  // below onset → fully compensated
 });
 
 // ===========================================================================

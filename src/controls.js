@@ -2,14 +2,17 @@
    controls.js — Keyboard handling + the recording indicator
    ---------------------------------------------------------------------------
    Keys: W = warp · M = motion vectors · Shift+M = slow-mo · D = demo mode ·
-   R = record · E = export CSV. Logic is unchanged from when it lived in main.js;
-   the toggled app state is read/written through `ctx` accessors so main keeps
-   owning it (and the render loop sees the same values).
+   R = record · E = export CSV · T = record an input trace (downloads JSON on
+   stop — feed it to bench/run.js). Logic is unchanged from when it lived in
+   main.js; the toggled app state is read/written through `ctx` accessors so
+   main keeps owning it (and the render loop sees the same values).
 --------------------------------------------------------------------------- */
+
+import { downloadTrace } from './replay/trace.js';
 
 /**
  * @param {object} ctx
- *   refs:    scoreboard, recorder, applyWarpLag
+ *   refs:    scoreboard, recorder, traceRecorder, applyWarpLag
  *   get/set: getWarpEnabled/setWarpEnabled, getMotionVectorsOn/setMotionVectorsOn,
  *            getDemoMode/setDemoMode, getSlowMo/setSlowMo
  * @returns {{ updateRecIndicator: () => void }} so the render loop can refresh it
@@ -46,6 +49,19 @@ export function installControls(ctx) {
       case 'e':
         ctx.recorder.download();
         break;
+      case 't': {
+        // Input-trace recording (replay system). Start: begins sampling the
+        // pose each tick. Stop: downloads the trace as JSON for bench/run.js.
+        const on = ctx.traceRecorder.toggle(performance.now());
+        if (!on && ctx.traceRecorder.samples.length) {
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+          downloadTrace(ctx.traceRecorder.toTrace(`session-${stamp}`));
+        }
+        console.log('[FrameWarp] input trace', on
+          ? 'RECORDING (T stops + downloads)'
+          : `STOPPED — ${ctx.traceRecorder.samples.length} samples downloaded`);
+        break;
+      }
       case 'd': {
         const on = !ctx.getDemoMode();
         ctx.setDemoMode(on);
