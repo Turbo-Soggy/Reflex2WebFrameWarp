@@ -23,7 +23,8 @@
       "Bash(git checkout *)",
       "PowerShell(npm test)",
       "Bash(git commit -m 'Stage C1: WebRTC plumbing — server/client pages, localStorage signaling, echo test *)",
-      "Bash(git commit -m 'Stage C2: pose metadata sync — frameId pixel tag + pose ring buffer *)"
+      "Bash(git commit -m 'Stage C2: pose metadata sync — frameId pixel tag + pose ring buffer *)",
+      "Bash(git commit -m 'Stage C3: the warp goes over the network — client reprojects the stream *)"
     ]
   }
 }

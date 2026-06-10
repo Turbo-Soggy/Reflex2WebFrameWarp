@@ -68,6 +68,35 @@ main canvas, main video {
   border-radius: 8px;
 }
 
+/* The raw delayed stream, corner-pinned for honest side-by-side comparison. */
+#raw-wrap {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5;
+  text-align: center;
+}
+#raw-wrap video {
+  width: 256px;
+  aspect-ratio: 16 / 9;
+  display: block;
+  background: #000;
+  border: 1px solid #1d2430;
+  border-radius: 6px;
+}
+#raw-wrap .raw-label {
+  margin-top: 4px;
+  font: 11px var(--mono);
+  color: var(--muted);
+}
+
+kbd {
+  font: 12px var(--mono);
+  border: 1px solid var(--muted);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
 /* Status panel: one row per plumbing stage, coloured by health. */
 #status {
   margin: 14px auto 0;

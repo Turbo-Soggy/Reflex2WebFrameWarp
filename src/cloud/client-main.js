@@ -1,19 +1,38 @@
 /* ---------------------------------------------------------------------------
-   client-main.js — The "PLAYER" page (Stage C1: WebRTC plumbing)
+   client-main.js — The "PLAYER" page (Stages C1–C3)
    ---------------------------------------------------------------------------
-   This page plays the role of the player's thin client: it receives the video
-   stream the server window captures and plays it in a <video> element.
+   The thin client of the cloud-streaming demo. Three layers, built in order:
 
-   In Stage C3 that <video> becomes a THREE.VideoTexture feeding the existing
-   warp shader — which is why C1 already counts DECODED frames with
-   requestVideoFrameCallback(): that callback's per-frame metadata is Plan A
-   for matching frames to pose packets in C2, so we exercise it now and find
-   out early if it's flaky (Plan B: frameId baked into corner pixels).
+   C1  PLUMBING   — receive the WebRTC video stream + DataChannel echo test.
+   C2  POSE SYNC  — for every displayed frame, recover the camera pose it was
+                    rendered with (pixel tag = exact; timestamps = scored).
+   C3  THE WARP   — this is the thesis. The <video> feeds the SAME warp shader
+                    as the local demo (quad-render.js / warp-shader.js), and
+                    every display refresh we reproject the latest decoded frame
+                    by (freshest LOCAL mouse pose − that frame's pose). The
+                    stream is genuinely old; the view direction is not.
+
+   The local demo's two clocks survive intact — the network now sits between
+   them: SLOW clock = the server's 30 FPS render arriving by video, FAST clock
+   = this page's pointer-lock input at display rate.
+
+   Local input is also forwarded to the server (latest-wins, unreliable
+   channel), which is what keeps the warp delta small: the server camera
+   follows the mouse with some delay, and the warp bridges exactly that delay.
 --------------------------------------------------------------------------- */
 
+import * as THREE from 'three';
+import { QuadRenderer } from '../quad-render.js';
+import { Input } from '../input.js';
+import { renderFovDeg } from '../projection.js';
 import { postSignal, waitForSignal, waitForIceComplete } from './signaling.js';
 import { CAPTURE, TAG, bitsToId, cellRect } from './frame-tag.js';
 import { PoseSync } from './pose-sync.js';
+
+// Must match the server's guard-band geometry (it renders the wider FOV;
+// we crop back to the display FOV — the split-across-the-network guard band).
+const DISPLAY_FOV_Y = 75;
+const GUARD = 0.12;
 
 function setStat(id, text, ok = null) {
   const el = document.getElementById(id);
@@ -23,7 +42,71 @@ function setStat(id, text, ok = null) {
 
 const video = document.getElementById('stream');
 
-// --- Stage C2: which pose does the frame on screen belong to? ---------------
+// Debug mode (?debug): exposes a console namespace and keeps the drawing
+// buffer readable — same convention as the local demo's main.js.
+const DEBUG = new URLSearchParams(location.search).has('debug');
+
+// --- Stage C3: the warped view ------------------------------------------------
+const canvas = document.getElementById('player-view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: DEBUG });
+renderer.setPixelRatio(1);
+renderer.setSize(CAPTURE.width, CAPTURE.height, false); // fixed, CSS-scaled
+
+// The decoded stream as a texture. No colorSpace conversion: the video holds
+// display-ready sRGB pixels and the warp shader passes colors through
+// untouched, so decode-to-linear here would double-convert and darken.
+const videoTexture = new THREE.VideoTexture(video);
+videoTexture.minFilter = THREE.LinearFilter;
+videoTexture.magFilter = THREE.LinearFilter;
+
+// The exact same warp compositor as the local demo.
+const quad = new QuadRenderer();
+quad.setGuard(GUARD);
+quad.setTexelSize(CAPTURE.width, CAPTURE.height);
+
+// No motion vectors over the network (the stream is YUV 4:2:0 video — there is
+// nowhere to carry per-pixel velocity). A 1×1 zero texture keeps the sampler
+// bound; uMotionVectors stays 0 so the term contributes nothing.
+const zeroVelocity = new THREE.DataTexture(
+  new Float32Array([0, 0, 0, 0]), 1, 1, THREE.RGBAFormat, THREE.FloatType);
+zeroVelocity.needsUpdate = true;
+const noMv = { texture: zeroVelocity, dtSeconds: 0, enabled: false };
+
+// Local pointer-lock input — the FAST clock, identical to the local demo.
+const input = new Input(canvas);
+canvas.addEventListener('click', () => input.lock());
+
+let warpEnabled = false;
+let forwardInput = true; // debug hook: freeze the server camera to isolate the warp
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyW') {
+    warpEnabled = !warpEnabled;
+    setStat('stat-warp', warpEnabled ? 'ON — view follows the mouse instantly' : 'OFF — raw delayed stream',
+      warpEnabled);
+  }
+});
+
+// Pose of the frame currently on screen (updated per presented frame, C2).
+const displayedPose = { yaw: 0, pitch: 0, frameId: null };
+
+// Display-rate compositor: reproject the newest decoded frame to the newest
+// local pose. This loop is the whole point of the project.
+const fovY = THREE.MathUtils.degToRad(DISPLAY_FOV_Y);
+const fovX = 2 * Math.atan(Math.tan(fovY / 2) * (CAPTURE.width / CAPTURE.height));
+
+function composite() {
+  requestAnimationFrame(composite);
+  const dYaw = input.yaw - displayedPose.yaw;
+  const dPitch = input.pitch - displayedPose.pitch;
+  // Same sign/normalisation as main.js: angular motion → display-UV shift.
+  const du = -dYaw / fovX;
+  const dv = dPitch / fovY;
+  const delta = warpEnabled ? [du, dv] : [0, 0];
+  quad.render(renderer, videoTexture, delta, CAPTURE.width, CAPTURE.height, noMv);
+}
+composite();
+
+// --- Stage C2: which pose does the frame on screen belong to? ------------------
 const poseSync = new PoseSync(60);
 
 // Read the frame tag (frame-tag.js) back out of the decoded video. The tag
@@ -99,6 +182,11 @@ let planAHits = 0;
       const tagId = readFrameTag();
       const tagPose = tagId === null ? null : poseSync.byFrameId(tagId);
       if (tagPose) {
+        // Stage C3: this is the pose the compositor warps against.
+        displayedPose.yaw = tagPose.yaw;
+        displayedPose.pitch = tagPose.pitch;
+        displayedPose.frameId = tagPose.frameId;
+
         const yawDeg = (tagPose.yaw * 180 / Math.PI).toFixed(1);
         const pitchDeg = (tagPose.pitch * 180 / Math.PI).toFixed(1);
         setStat('stat-pose', `frame ${tagId} · yaw ${yawDeg}° · pitch ${pitchDeg}°`, true);
@@ -138,13 +226,12 @@ let planAHits = 0;
     setStat('stat-frames', 'requestVideoFrameCallback unsupported → falling back to rAF polling', false);
   }
 
-  // --- DataChannel echo test (both directions) ------------------------------
-  // The server opens the channel; we receive it here. We echo the server's
-  // pings back, and send pings of our own to measure RTT from this side.
+  // --- DataChannel: poses in, input + echo out --------------------------------
   pc.addEventListener('datachannel', (e) => {
     const dc = e.channel;
     let pingId = 0;
     let echoesHeard = 0;
+    let inputSeq = 0;
 
     dc.addEventListener('open', () => {
       setStat('stat-dc', 'open (unreliable, unordered)', true);
@@ -152,6 +239,15 @@ let planAHits = 0;
         if (dc.readyState !== 'open') return;
         dc.send(JSON.stringify({ type: 'ping', from: 'client', id: ++pingId, sent: performance.now() }));
       }, 1000);
+
+      // Stage C3/C4: forward local input to drive the server camera. ~120 Hz,
+      // latest-wins: each packet carries the FULL pose (not a delta) plus a
+      // sequence number, so on the unreliable/unordered channel a lost or
+      // late packet costs nothing — the next one supersedes it entirely.
+      setInterval(() => {
+        if (dc.readyState !== 'open' || !forwardInput) return;
+        dc.send(JSON.stringify({ type: 'input', seq: ++inputSeq, yaw: input.yaw, pitch: input.pitch }));
+      }, 1000 / 120);
     });
 
     dc.addEventListener('message', (ev) => {
@@ -184,5 +280,14 @@ let planAHits = 0;
   setStat('stat-signal', `handshake failed: ${err.message}`, false);
   console.error('[CloudClient] handshake failed', err);
 });
+
+if (DEBUG) {
+  window.CloudClient = {
+    input, poseSync, displayedPose, canvas, videoTexture,
+    get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
+    get forwardInput() { return forwardInput; }, set forwardInput(v) { forwardInput = v; },
+  };
+  console.log('[CloudClient] debug namespace exposed as window.CloudClient');
+}
 
 console.log('[CloudClient] ready — waiting for the server window.');

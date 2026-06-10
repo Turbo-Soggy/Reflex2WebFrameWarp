@@ -88,17 +88,22 @@ function drawFrameTag(id) {
   // No clear-color restore needed: the scene clears from scene.background.
 }
 
+// Stage C3: the camera is driven by the PLAYER's mouse, arriving as full-pose
+// packets on the DataChannel. Latest-wins by sequence number: the channel is
+// unreliable AND unordered, so a packet may be lost or arrive late — either
+// way the newest seq seen is the freshest pose, and stale ones are dropped.
+// (Until the player connects/moves, the camera just holds yaw 0.)
+const remoteInput = { seq: -1, yaw: 0, pitch: 0 };
+
 function frame() {
   requestAnimationFrame(frame);
   const now = performance.now();
   if (now < nextRenderDue) return;
   nextRenderDue = Math.max(nextRenderDue + RENDER_INTERVAL, now - RENDER_INTERVAL);
 
-  // No remote input yet (Stage C4) — auto-pan so the stream visibly moves and
-  // the video encoder has real motion to chew on.
   const t = clock.getElapsedTime();
-  const yaw = 0.35 * Math.sin(t * 0.5);
-  const pitch = 0.06 * Math.sin(t * 0.23);
+  const yaw = remoteInput.yaw;
+  const pitch = remoteInput.pitch;
   euler.set(pitch, yaw, 0);
   camera.quaternion.setFromEuler(euler);
 
@@ -179,9 +184,21 @@ dc.addEventListener('open', () => {
   }, 1000);
 });
 
+let inputsApplied = 0;
 dc.addEventListener('message', (e) => {
   const msg = JSON.parse(e.data);
-  if (msg.type === 'ping') {
+  if (msg.type === 'input') {
+    // The player's pose (Stage C3) — keep only the freshest by seq.
+    if (msg.seq > remoteInput.seq) {
+      remoteInput.seq = msg.seq;
+      remoteInput.yaw = msg.yaw;
+      remoteInput.pitch = msg.pitch;
+      inputsApplied++;
+      if (inputsApplied % 120 === 0) {
+        setStat('stat-input', `seq ${msg.seq} · yaw ${(msg.yaw * 180 / Math.PI).toFixed(1)}°`, true);
+      }
+    }
+  } else if (msg.type === 'ping') {
     // The client's ping: echo it straight back so IT can measure RTT.
     dc.send(JSON.stringify({ ...msg, type: 'pong' }));
   } else if (msg.type === 'pong' && msg.from === 'server') {

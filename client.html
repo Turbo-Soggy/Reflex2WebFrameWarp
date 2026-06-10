@@ -4,22 +4,42 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Frame Warp — PLAYER</title>
+
+  <!-- Same vendored Three.js as the local demo (works offline, can't break
+       mid-defense if the network drops). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js"
+    }
+  }
+  </script>
+
   <link rel="stylesheet" href="./src/cloud/cloud.css" />
 </head>
 <body>
   <header>
     <h1><span class="role-client">Player</span></h1>
-    <span class="subtitle">receives the stream — in Stage C3 this window warps it with local input</span>
+    <span class="subtitle">click the view to grab the mouse · <kbd>W</kbd> toggles the warp · <kbd>Esc</kbd> releases</span>
   </header>
 
   <main>
-    <!-- The received stream. muted+autoplay so playback starts without a user
-         gesture; playsinline so mobile Safari (if ever) doesn't go fullscreen.
-         In Stage C3 this element becomes a THREE.VideoTexture. -->
-    <video id="stream" autoplay playsinline muted></video>
+    <!-- The warped view (Stage C3): the received stream re-projected by the
+         freshest LOCAL mouse input. Fixed 1280×720 like the capture; CSS-only
+         scaling, same rule as the server canvas. -->
+    <canvas id="player-view" width="1280" height="720"></canvas>
   </main>
 
-  <!-- Plumbing health, one row per stage of the C1 checklist. -->
+  <!-- The raw delayed stream, small, for honest comparison: this is what
+       actually arrives over the network (tag visible in its corner). It is
+       also the decode surface the warp samples from — keeping it visible (not
+       display:none) keeps requestVideoFrameCallback servicing reliably. -->
+  <div id="raw-wrap">
+    <video id="stream" autoplay playsinline muted></video>
+    <div class="raw-label">raw stream (as it arrives)</div>
+  </div>
+
+  <!-- Plumbing health, one row per stage. -->
   <div id="status">
     <div class="row"><span class="label">Signaling</span><span id="stat-signal">—</span></div>
     <div class="row"><span class="label">ICE</span><span id="stat-ice">new</span></div>
@@ -29,6 +49,7 @@
     <div class="row"><span class="label">Echo (client→server→client)</span><span id="stat-echo">—</span></div>
     <div class="row"><span class="label">Displayed frame pose (C2)</span><span id="stat-pose">—</span></div>
     <div class="row"><span class="label">Plan A timestamps vs tag</span><span id="stat-plana">—</span></div>
+    <div class="row"><span class="label">Warp (C3)</span><span id="stat-warp">OFF — press W (click the view first)</span></div>
   </div>
 
   <script type="module" src="./src/cloud/client-main.js"></script>
