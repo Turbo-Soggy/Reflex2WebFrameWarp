@@ -1,10 +1,23 @@
 % ---------------------------------------------------------------------------
 % references.bib — living bibliography for the Frame Warp research program
 % ---------------------------------------------------------------------------
-% ⚠ PROVENANCE: compiled at project close (June 2026) largely from memory,
-% plus the Phase 0 web pass. Before citing ANY entry in a submission, verify
-% it against the publisher page (DOI, pages, year) — fields here may be
-% imperfect. Entries found only at abstract level in Phase 0 are marked TODO.
+% PROVENANCE PASS (June 2026, same session as compilation). Every entry
+% carries one of three STATUS lines:
+%
+%   STATUS: verified against publisher/index this session
+%       — title/authors/venue/year (and DOI where given) checked against the
+%         ACM DL, dblp, arXiv, or the publisher page. Full text NOT read
+%         unless the note says so.
+%   STATUS: found in search results this session, details unverified
+%       — the work exists (title seen on an index/search page) but
+%         venue/year/author fields below are from memory.
+%   STATUS: inferred from memory, not retrieved this session
+%       — written from training knowledge / citation chains. Treat every
+%         field as unconfirmed. Verify before citing. Several verification
+%         searches were blocked by API errors during this pass; these
+%         entries were simply never checked, which is not evidence of error.
+%
+% Whatever the status: read the paper before citing it for a CLAIM.
 % ---------------------------------------------------------------------------
 
 % ===== Image-based rendering & post-render warping (the ancestry) ==========
@@ -14,6 +27,7 @@
   title     = {View Interpolation for Image Synthesis},
   booktitle = {Proc. SIGGRAPH},
   year      = {1993},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
 @inproceedings{mcmillan1995plenoptic,
@@ -21,6 +35,7 @@
   title     = {Plenoptic Modeling: An Image-Based Rendering System},
   booktitle = {Proc. SIGGRAPH},
   year      = {1995},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
 @inproceedings{mark1997post,
@@ -28,6 +43,7 @@
   title     = {Post-Rendering 3D Warping},
   booktitle = {Proc. Symposium on Interactive 3D Graphics (I3D)},
   year      = {1997},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
 % ===== VR reprojection (ATW / ASW / timewarp) ===============================
@@ -36,21 +52,26 @@
   author = {Carmack, John},
   title  = {Latency Mitigation Strategies},
   year   = {2013},
-  note   = {AltDevBlogADay essay; the original timewarp argument},
+  note   = {AltDevBlogADay essay; the original timewarp argument.
+            STATUS: inferred from memory, not retrieved this session
+            (original host defunct; mirrors exist)},
 }
 
 @inproceedings{vanwaveren2016atw,
   author    = {van Waveren, J. M. P.},
   title     = {The Asynchronous Time Warp for Virtual Reality on Consumer Hardware},
-  booktitle = {Proc. ACM Symposium on Virtual Reality Software and Technology (VRST)},
+  booktitle = {Proc. 22nd ACM Symposium on Virtual Reality Software and Technology (VRST)},
   year      = {2016},
+  doi       = {10.1145/2993369.2993375},
+  note      = {STATUS: verified against publisher/index this session (ACM DL + dblp)},
 }
 
 @misc{oculus2016asw,
   author = {{Oculus VR}},
   title  = {Asynchronous Spacewarp},
   year   = {2016},
-  note   = {Developer blog; extrapolation companion to ATW},
+  note   = {Developer blog; extrapolation companion to ATW.
+            STATUS: inferred from memory, not retrieved this session},
 }
 
 @inproceedings{boos2016flashback,
@@ -58,6 +79,7 @@
   title     = {FlashBack: Immersive Virtual Reality on Mobile Devices via Rendering Memoization},
   booktitle = {Proc. ACM MobiSys},
   year      = {2016},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
 @inproceedings{lai2017furion,
@@ -65,6 +87,7 @@
   title     = {Furion: Engineering High-Quality Immersive Virtual Reality on Today's Mobile Devices},
   booktitle = {Proc. ACM MobiCom},
   year      = {2017},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
 % ===== Cloud gaming: systems & latency measurement ==========================
@@ -74,6 +97,8 @@
   title     = {Measuring the Latency of Cloud Gaming Systems},
   booktitle = {Proc. ACM Multimedia},
   year      = {2011},
+  note      = {STATUS: found in search results this session (title-level,
+            ResearchGate index); author/venue fields from memory},
 }
 
 @inproceedings{choy2012brewing,
@@ -81,6 +106,7 @@
   title     = {The Brewing Storm in Cloud Gaming: A Measurement Study on Cloud to End-User Latency},
   booktitle = {Proc. NetGames},
   year      = {2012},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
 @inproceedings{jarschel2011qoe,
@@ -88,6 +114,7 @@
   title     = {An Evaluation of QoE in Cloud Gaming Based on Subjective Tests},
   booktitle = {Proc. IMIS},
   year      = {2011},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
 @article{shea2013cloud,
@@ -95,6 +122,7 @@
   title   = {Cloud Gaming: Architecture and Performance},
   journal = {IEEE Network},
   year    = {2013},
+  note    = {STATUS: inferred from memory, not retrieved this session},
 }
 
 @inproceedings{huang2013gaminganywhere,
@@ -102,6 +130,8 @@
   title     = {GamingAnywhere: An Open Cloud Gaming System},
   booktitle = {Proc. ACM MMSys},
   year      = {2013},
+  note      = {STATUS: inferred from memory, not retrieved this session
+            (verification search blocked by API errors)},
 }
 
 @inproceedings{claypool2014latency,
@@ -109,6 +139,7 @@
   title     = {The Effects of Latency on Player Performance in Cloud-Based Games},
   booktitle = {Proc. NetGames},
   year      = {2014},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
 @article{claypool2006latency,
@@ -116,6 +147,7 @@
   title   = {Latency and Player Actions in Online Games},
   journal = {Communications of the ACM},
   year    = {2006},
+  note    = {STATUS: inferred from memory, not retrieved this session},
 }
 
 @inproceedings{beigbeder2004effects,
@@ -123,14 +155,18 @@
   title     = {The Effects of Loss and Latency on User Performance in Unreal Tournament 2003},
   booktitle = {Proc. NetGames},
   year      = {2004},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
-@inproceedings{kamarainen2017dissecting,
+@inproceedings{kamarainen2017imperceptible,
   author    = {K{\"a}m{\"a}r{\"a}inen, Teemu and Siekkinen, Matti and Yl{\"a}-J{\"a}{\"a}ski, Antti and Zhang, Wenxiao and Hui, Pan},
-  title     = {Dissecting the End-to-End Latency of Interactive Mobile Video Applications},
-  booktitle = {Proc. ACM MMSys (Measuring latency for cloud gaming)},
+  title     = {A Measurement Study on Achieving Imperceptible Latency in Mobile Cloud Gaming},
+  booktitle = {Proc. 8th ACM Multimedia Systems Conference (MMSys)},
   year      = {2017},
-  note      = {TODO verify exact title/venue},
+  doi       = {10.1145/3083187.3083191},
+  note      = {STATUS: verified against publisher/index this session (ACM DL) —
+            title corrected during this pass (the from-memory draft had a
+            wrong title); author list from memory, spot-check on use},
 }
 
 @article{carrascosa2022stadia,
@@ -138,6 +174,7 @@
   title   = {Cloud-Gaming: Analysis of Google Stadia Traffic},
   journal = {Computer Communications},
   year    = {2022},
+  note    = {STATUS: inferred from memory, not retrieved this session},
 }
 
 % ===== Latency compensation for cloud gaming (the direct competitors) =======
@@ -145,8 +182,12 @@
 @inproceedings{lee2015outatime,
   author    = {Lee, Kyungmin and Chu, David and Cuervo, Eduardo and Kopf, Johannes and Degtyarev, Yury and Grizan, Sergey and Wolman, Alec and Flinn, Jason},
   title     = {Outatime: Using Speculation to Enable Low-Latency Continuous Interaction for Mobile Cloud Gaming},
-  booktitle = {Proc. ACM MobiSys},
+  booktitle = {Proc. 13th ACM MobiSys},
   year      = {2015},
+  doi       = {10.1145/2742647.2742656},
+  note      = {STATUS: verified against publisher/index this session (ACM DL;
+            MobiSys 2015 best-paper co-winner); author list from memory,
+            spot-check on use},
 }
 
 @inproceedings{cuervo2015kahawai,
@@ -154,21 +195,31 @@
   title     = {Kahawai: High-Quality Mobile Gaming Using GPU Offload},
   booktitle = {Proc. ACM MobiSys},
   year      = {2015},
+  note      = {STATUS: inferred from memory, not retrieved this session},
 }
 
 @inproceedings{sabet2020latency,
   author    = {Shafiee Sabet, Saeed and Schmidt, Steven and Zadtootaghaj, Saman and Naderi, Babak and Griwodz, Carsten and M{\"o}ller, Sebastian},
   title     = {A Latency Compensation Technique Based on Game Characteristics to Mitigate the Influence of Delay on Cloud Gaming Quality of Experience},
-  booktitle = {Proc. ACM MMSys},
+  booktitle = {Proc. 11th ACM Multimedia Systems Conference (MMSys)},
   year      = {2020},
+  doi       = {10.1145/3339825.3391855},
+  note      = {STATUS: verified against publisher/index this session (ACM DL,
+            title/venue/DOI); author list from memory, spot-check on use},
 }
 
-@incollection{liu2018lagcompensation,
-  author    = {TODO},
+@incollection{li2018lagcompensation,
+  author    = {Li, Zhi and Melvin, Hugh and Bruzgiene, Rasa and Pocta, Peter and Skorin-Kapov, Lea and Zgank, Andrej},
   title     = {Lag Compensation for First-Person Shooter Games in Cloud Gaming},
-  booktitle = {Springer (chapter 978-3-319-90415-3\_5)},
+  booktitle = {Autonomous Control for a Reliable Internet of Services},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {10768},
+  publisher = {Springer},
   year      = {2018},
-  note      = {TODO verify authors/venue — found in Phase 0 search},
+  doi       = {10.1007/978-3-319-90415-3\_5},
+  note      = {STATUS: verified against publisher/index this session
+            (SpringerLink — authors filled in during this pass; the
+            from-memory draft had them as TODO)},
 }
 
 % ===== Frame generation & industry warp ====================================
@@ -177,14 +228,16 @@
   author = {{NVIDIA}},
   title  = {DLSS 3: AI-Powered Frame Generation},
   year   = {2022},
-  note   = {Technical overview / whitepaper},
+  note   = {Technical overview / whitepaper.
+            STATUS: inferred from memory, not retrieved this session},
 }
 
 @misc{amd2023fsr3,
   author = {{AMD}},
   title  = {FidelityFX Super Resolution 3 and Fluid Motion Frames},
   year   = {2023},
-  note   = {Technical overview},
+  note   = {Technical overview.
+            STATUS: inferred from memory, not retrieved this session},
 }
 
 @misc{nvidia2025reflex2,
@@ -192,7 +245,9 @@
   title  = {Reflex 2 with Frame Warp},
   year   = {2025},
   note   = {Announced CES 2025; as of June 2026 not shipped in games.
-            https://www.nvidia.com/en-us/geforce/news/reflex-2-even-lower-latency-gameplay-with-frame-warp/},
+            https://www.nvidia.com/en-us/geforce/news/reflex-2-even-lower-latency-gameplay-with-frame-warp/
+            STATUS: verified against publisher/index this session (NVIDIA page
+            + TechPowerUp/VideoCardz coverage, Phase 0 pass)},
 }
 
 % ===== Transport ============================================================
@@ -201,23 +256,34 @@
   author = {Alvestrand, Harald},
   title  = {Overview: Real-Time Protocols for Browser-Based Applications},
   year   = {2021},
-  note   = {RFC 8825 (WebRTC)},
+  note   = {RFC 8825 (WebRTC).
+            STATUS: inferred from memory, not retrieved this session
+            (RFC number/title trivially checkable at rfc-editor.org)},
 }
 
-@inproceedings{webtransport2025gamestreaming,
-  author    = {TODO},
+@inproceedings{nguyen2025webtransport,
+  author    = {Nguyen, Minh and others},
   title     = {A WebTransport-based System for Real-Time Game Streaming},
-  booktitle = {Proc. ICCVCI},
+  booktitle = {Proc. 6th International Conference on Computer Vision and Computational Intelligence (ICCVCI)},
   year      = {2025},
-  note      = {TODO verify authors — found in Phase 0 search, dl.acm.org/doi/10.1145/3744725.3744726},
+  doi       = {10.1145/3744725.3744726},
+  note      = {STATUS: verified against publisher/index this session (ACM DL +
+            Fraunhofer publica — first author confirmed, full author list
+            not retrieved; complete "and others" before citing). A companion
+            "A WebTransport-based System for Cloud Streaming" appeared at
+            Mile-High Video '25 (10.1145/3715675.3715820)},
 }
 
 % ===== Closest contemporary work (Phase 0 finding) ==========================
 
-@misc{gaussianstreaming2026,
-  author = {TODO},
+@misc{siekkinen2026gaussian,
+  author = {Siekkinen, Matti and K{\"a}m{\"a}r{\"a}inen, Teemu},
   title  = {Streaming Real-Time Rendered Scenes as 3D Gaussians},
   year   = {2026},
   note   = {arXiv:2604.02851. Uses image-space reprojection of 2D video as its
-            baseline category — read in full before citing},
+            baseline category — read in full before citing.
+            STATUS: verified against publisher/index this session (arXiv —
+            authors filled in during this pass: Aalto / U. Helsinki; same
+            K{\"a}m{\"a}r{\"a}inen as kamarainen2017imperceptible). Abstract
+            only; full text NOT read},
 }

@@ -1,9 +1,9 @@
 # Related work — positioning the claim
 
-> Phase 2 of the research roadmap. Keys refer to `references.bib` (⚠ verify
-> every entry against the publisher before submission — most were compiled
-> from memory at project close; entries marked TODO were found only at
-> abstract level in the Phase 0 pass).
+> Phase 2 of the research roadmap. Keys refer to `references.bib`, where
+> every entry now carries a STATUS line from the June 2026 provenance pass:
+> verified against the publisher/index, found at title level, or inferred
+> from memory. Read the paper itself before citing it for a claim.
 
 ## The claim being positioned
 
@@ -42,7 +42,8 @@ gaming latency; [choy2012brewing] showed CDN-style proximity cannot solve it;
 [jarschel2011qoe] and [claypool2014latency] quantified the QoE cost;
 [claypool2006latency] and [beigbeder2004effects] established the per-genre
 latency sensitivity that makes FPS-style camera control the hard case;
-[kamarainen2017dissecting] decomposed end-to-end interactive video latency;
+[kamarainen2017imperceptible] measured what it takes to reach imperceptible
+latency in mobile cloud gaming;
 [carrascosa2022stadia] characterised a production service (Stadia). **Gap:**
 these measure and decompose; they do not *remove* terms. This project's
 decomposition (docs/THEORY.md §1) follows their method, then deletes every
@@ -56,7 +57,7 @@ of input (needs the game engine, server compute per speculation branch);
 Kahawai [cuervo2015kahawai] splits rendering between server and a capable
 client GPU running the same engine; [sabet2020latency] adapts game mechanics
 to latency rather than reducing it; FPS lag-compensation chapters
-[liu2018lagcompensation] adjust hit registration, not the displayed view.
+[li2018lagcompensation] adjust hit registration, not the displayed view.
 **Gap — the core of the novelty claim:** none reproject *the video stream
 itself, on the client, without engine access*. The thin client that
 [lee2015outatime] explicitly assumes cannot help is here given exactly one
@@ -79,7 +80,7 @@ open + browser instantiation, with measurements.
 
 WebRTC [rfc8825] is the only browser path to sub-second interactive video
 today; WebTransport-based game streaming is emerging
-[webtransport2025gamestreaming] and is the natural successor for the control
+[nguyen2025webtransport] and is the natural successor for the control
 channel (the architecture transfers; only the plumbing changes — roadmap
 Phase 1 note). **Gap:** transport work optimises delivery latency; it cannot
 remove the latency already accumulated — reprojection composes with any of it.
@@ -87,13 +88,17 @@ remove the latency already accumulated — reprojection composes with any of it.
 ## 7. Closest contemporary work
 
 *Streaming Real-Time Rendered Scenes as 3D Gaussians*
-[gaussianstreaming2026] replaces the 2D video representation entirely so the
+[siekkinen2026gaussian] replaces the 2D video representation entirely so the
 client can re-render views — explicitly motivated by the limits of
 "image-space reprojection of 2D video," which it treats as the baseline
 category. **Gap/complement:** it abandons commodity video codecs and players;
 this project stays inside them. If Gaussian streaming matures, this project
 becomes the *commodity-infrastructure baseline* such systems must beat — a
 position worth measuring well, which is what the replay instrument is for.
+(Lineage note from the provenance pass: its authors are the same
+Siekkinen/Kämäräinen group behind the imperceptible-latency measurement study
+[kamarainen2017imperceptible] — the measurement people moved to
+representation; nobody took the commodity-video warp path.)
 
 ## Citation count
 
