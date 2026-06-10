@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   Design tokens — DESIGN (1).md "Authkit — blueprint on midnight glass".
+   Colors, typography, shadows and radii are sacred; do not invent new ones.
+   ========================================================================== */
+@theme {
+  /* Colors */
+  --color-midnight-ink: #05060f;
+  --color-graphite-plate: #2f343e;
+  --color-steel-border: #3f4959;
+  --color-fog: #81899b;
+  --color-pebble: #9da7ba;
+  --color-moonlight: #c7d3ea;
+  --color-ice: #d1e4fa;
+  --color-glacier: #d8ecf8;
+  --color-frost-link: #b6d9fc;
+  --color-electric-iris: #663af3;
+  --color-ember: #e46d4c;
+  --color-azure: #027dea;
+  --color-cipher-mint: #269684;
+  --color-blueprint-glow: #bacff7;
+
+  /* Typography — substitutes loaded: Inter (Untitled Sans / aeonikPro),
+     JetBrains Mono (dotDigital) */
+  --font-sans: 'Untitled Sans', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-display: 'aeonikPro', 'Aeonik', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'dotDigital', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Type scale */
+  --text-caption: 12px;
+  --text-caption--line-height: 1.5;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 1.43;
+  --text-body: 16px;
+  --text-body--line-height: 1.5;
+  --text-subheading: 18px;
+  --text-subheading--line-height: 1.33;
+  --text-heading-sm: 24px;
+  --text-heading-sm--line-height: 1.2;
+  --text-heading: 28px;
+  --text-heading--line-height: 1.17;
+  --text-display: 48px;
+  --text-display--line-height: 1.14;
+
+  /* Named radii (spec: cards 10-16px, badges 6px, buttons/inputs 2px) */
+  --radius-cards: 12px;
+  --radius-badges: 6px;
+  --radius-buttons: 2px;
+
+  /* Shadows */
+  --shadow-glow-sm: rgba(186, 207, 247, 0.32) 0px 0px 6px 0px;
+  --shadow-glow-md: rgba(238, 186, 247, 0.24) 0px 0px 12px 0px;
+  --shadow-subtle: rgba(186, 215, 247, 0.12) 0px 0px 0px 1px inset;
+  --shadow-subtle-2: rgba(199, 211, 234, 0.12) -0.5px 0.5px 1px 0px inset, rgba(186, 215, 247, 0.08) 0px 0px 96px 0px inset;
+  --shadow-subtle-3: rgba(186, 214, 247, 0.06) 0px 0px 0px 1px inset;
+  --shadow-subtle-4: rgba(199, 211, 234, 0.12) 0px 1px 1px 0px inset, rgba(199, 211, 234, 0.05) 0px 24px 48px 0px inset, rgba(6, 6, 14, 0.7) 0px 24px 32px 0px;
+  --shadow-subtle-5: rgba(255, 255, 255, 0.1) 0px 0px 0px 1px inset;
+  --shadow-subtle-6: rgba(216, 236, 248, 0.2) 0px 1px 1px 0px inset, rgba(168, 216, 245, 0.06) 0px 24px 48px 0px inset, rgba(0, 0, 0, 0.3) 0px 16px 32px 0px;
+  --shadow-subtle-7: rgba(216, 236, 248, 0.2) 0px 1px 1px 0px inset, rgba(168, 216, 245, 0.06) 0px 24px 48px 0px inset;
+  /* "Ignited" hairline — hover state for ghost borders and icon tiles */
+  --shadow-ignite: rgba(186, 215, 247, 0.4) 0px 0px 0px 1px inset, rgba(186, 207, 247, 0.28) 0px 0px 20px 0px;
+
+  /* Motion */
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body {
+  @apply bg-midnight-ink text-moonlight font-sans text-body antialiased;
+  letter-spacing: -0.01px;
+  overflow-x: hidden;
+}
+
+/* ---- blueprint backdrop layers (positioned/animated from React) ---------- */
+.grid-pattern {
+  background-image:
+    linear-gradient(rgba(186, 215, 247, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(186, 215, 247, 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.mask-fade-b {
+  mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
+}
+.glow-radial {
+  background: radial-gradient(ellipse at center,
+    rgba(152, 192, 239, 0.16) 0%,
+    rgba(152, 192, 239, 0.05) 45%,
+    transparent 70%);
+}
+.conic-hairline {
+  background: conic-gradient(from 90deg at 50% -5%,
+    transparent 35%, rgba(124, 145, 182, 0.3) 45%,
+    rgba(124, 145, 182, 0.5) 50%, rgba(124, 145, 182, 0.3) 55%, transparent 65%);
+}
+
+/* ---- recurring components ------------------------------------------------ */
+.eyebrow {
+  @apply font-mono text-fog uppercase inline-flex items-center gap-4;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  font-feature-settings: "tnum";
+}
+.eyebrow::before, .eyebrow::after {
+  content: "";
+  @apply inline-block h-px w-8 bg-steel-border;
+}
+
+.btn-primary {
+  @apply inline-block bg-electric-iris text-white text-body font-medium rounded-buttons px-4 py-2.5 select-none;
+  transition: background 0.2s ease;
+}
+.btn-primary:hover { background: #7450f5; }
+
+.btn-ghost {
+  @apply inline-block bg-transparent text-moonlight text-body font-medium rounded-buttons px-4 py-2.5 select-none shadow-subtle-3;
+  transition: box-shadow 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+.btn-ghost:hover {
+  @apply text-glacier shadow-ignite;
+  background: rgba(199, 211, 234, 0.04);
+}
+
+.plate-card {
+  @apply bg-graphite-plate rounded-cards shadow-subtle-4 p-6;
+}
+
+.icon-tile {
+  @apply flex items-center justify-center w-10 h-10 rounded-badges shadow-subtle;
+  background: rgba(199, 211, 234, 0.06);
+  transition: box-shadow 0.2s ease;
+}
+.icon-tile svg { stroke: var(--color-moonlight); stroke-width: 1.5; fill: none; }
+
+.mono-tag {
+  @apply font-mono text-fog uppercase;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+/* ---- tables --------------------------------------------------------------- */
+table { @apply w-full border-collapse text-body-sm; }
+th {
+  @apply font-mono text-fog uppercase text-left font-medium px-3.5 py-2.5 border-b border-steel-border;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-feature-settings: "tnum";
+}
+td {
+  @apply px-3.5 py-2.5 text-left text-moonlight;
+  border-bottom: 1px solid rgba(63, 73, 89, 0.5);
+}
+tr:last-child td { border-bottom: none; }
+td.num { font-variant-numeric: tabular-nums; }

@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frame Warp — Client-Side Frame Reprojection for Latency Mitigation</title>
+<meta name="description" content="Frame Warp: client-side frame reprojection for motion-to-photon latency mitigation in browser and cloud-streamed rendering. B.Tech final-year project, June 2026.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Colors */
+  --color-midnight-ink: #05060f;
+  --color-graphite-plate: #2f343e;
+  --color-steel-border: #3f4959;
+  --color-fog: #81899b;
+  --color-pebble: #9da7ba;
+  --color-moonlight: #c7d3ea;
+  --color-ice: #d1e4fa;
+  --color-glacier: #d8ecf8;
+  --color-frost-link: #b6d9fc;
+  --color-electric-iris: #663af3;
+  --color-ember: #e46d4c;
+  --color-azure: #027dea;
+  --color-cipher-mint: #269684;
+  --color-blueprint-glow: #bacff7;
+  --gradient-blueprint-glow: linear-gradient(0deg, #d8ecf8 0%, #98c0ef 100%);
+
+  /* Typography — Font Families (substitutes loaded: Inter, JetBrains Mono) */
+  --font-untitled-sans: 'Untitled Sans', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-aeonikpro: 'aeonikPro', 'Aeonik', 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-dotdigital: 'dotDigital', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Typography — Scale */
+  --text-caption: 12px;
+  --leading-caption: 1.5;
+  --tracking-caption: -0.01px;
+  --text-body-sm: 14px;
+  --leading-body-sm: 1.43;
+  --tracking-body-sm: -0.01px;
+  --text-body: 16px;
+  --leading-body: 1.5;
+  --tracking-body: -0.01px;
+  --text-subheading: 18px;
+  --leading-subheading: 1.33;
+  --tracking-subheading: -0.01px;
+  --text-heading-sm: 24px;
+  --leading-heading-sm: 1.2;
+  --tracking-heading-sm: -0.01px;
+  --text-heading: 28px;
+  --leading-heading: 1.17;
+  --text-display: 48px;
+  --leading-display: 1.14;
+
+  /* Typography — Weights */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Spacing */
+  --spacing-unit: 4px;
+  --spacing-4: 4px;
+  --spacing-8: 8px;
+  --spacing-12: 12px;
+  --spacing-16: 16px;
+  --spacing-20: 20px;
+  --spacing-24: 24px;
+  --spacing-32: 32px;
+  --spacing-36: 36px;
+  --spacing-40: 40px;
+  --spacing-48: 48px;
+  --spacing-56: 56px;
+  --spacing-100: 100px;
+  --spacing-120: 120px;
+  --spacing-200: 200px;
+
+  /* Layout */
+  --page-max-width: 1200px;
+  --content-max-width: 760px;
+  --section-gap: 120px;
+  --card-padding: 24px;
+  --element-gap: 12px; /* spec gives the range 8-16px */
+
+  /* Border Radius */
+  --radius-sm: 2px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-3xl-2: 28px;
+  --radius-3xl-3: 44px;
+  --radius-full: 999px;
+  --radius-full-2: 4999.5px;
+  --radius-full-3: 9999px;
+
+  /* Named Radii */
+  --radius-cards: 12px; /* spec gives the range 10-16px */
+  --radius-pills: var(--radius-full);
+  --radius-badges: var(--radius-md);
+  --radius-inputs: var(--radius-sm);
+  --radius-buttons: var(--radius-sm);
+
+  /* Shadows */
+  --shadow-sm: rgba(186, 207, 247, 0.32) 0px 0px 6px 0px;
+  --shadow-md: rgba(238, 186, 247, 0.24) 0px 0px 12px 0px;
+  --shadow-subtle: rgba(186, 215, 247, 0.12) 0px 0px 0px 1px inset;
+  --shadow-subtle-2: rgba(199, 211, 234, 0.12) -0.5px 0.5px 1px 0px inset, rgba(186, 215, 247, 0.08) 0px 0px 96px 0px inset;
+  --shadow-subtle-3: rgba(186, 214, 247, 0.06) 0px 0px 0px 1px inset;
+  --shadow-subtle-4: rgba(199, 211, 234, 0.12) 0px 1px 1px 0px inset, rgba(199, 211, 234, 0.05) 0px 24px 48px 0px inset, rgba(6, 6, 14, 0.7) 0px 24px 32px 0px;
+  --shadow-subtle-5: rgba(255, 255, 255, 0.1) 0px 0px 0px 1px inset;
+  --shadow-subtle-6: rgba(216, 236, 248, 0.2) 0px 1px 1px 0px inset, rgba(168, 216, 245, 0.06) 0px 24px 48px 0px inset, rgba(0, 0, 0, 0.3) 0px 16px 32px 0px;
+  --shadow-subtle-7: rgba(216, 236, 248, 0.2) 0px 1px 1px 0px inset, rgba(168, 216, 245, 0.06) 0px 24px 48px 0px inset;
+
+  /* Surfaces */
+  --surface-canvas: #05060f;
+  --surface-plate: #2f343e; /* spec value #2f343 is a truncated hex */
+  --surface-iris-lift: #663af3;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--color-midnight-ink);
+  color: var(--color-moonlight);
+  font-family: var(--font-untitled-sans);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- background grid (the "blueprint") ---- */
+.grid-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(186, 215, 247, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(186, 215, 247, 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 100%);
+}
+.hero-glow {
+  position: absolute;
+  top: -180px; left: 50%;
+  transform: translateX(-50%);
+  width: 900px; height: 480px;
+  background: radial-gradient(ellipse at center, rgba(152, 192, 239, 0.16) 0%, rgba(152, 192, 239, 0.05) 45%, transparent 70%);
+  pointer-events: none;
+}
+
+main { position: relative; z-index: 1; }
+
+/* ---- nav ---- */
+nav {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.nav-brand {
+  font-family: var(--font-dotdigital);
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  color: #ffffff;
+  text-decoration: none;
+  font-feature-settings: "tnum";
+}
+.nav-links { display: flex; align-items: center; gap: 4px; }
+.nav-links a.pill {
+  font-size: 14px;
+  color: var(--color-moonlight);
+  text-decoration: none;
+  padding: 8px 14px;
+  border-radius: var(--radius-pills);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nav-links a.pill:hover { background: rgba(199, 211, 234, 0.08); color: var(--color-glacier); }
+
+/* ---- hero ---- */
+.hero {
+  position: relative;
+  max-width: var(--page-max-width);
+  margin: 40px auto 0;
+  padding: 100px 24px 56px;
+  text-align: center;
+}
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 24px auto 24px;
+  height: 1px;
+  background: conic-gradient(from 90deg at 50% -5%, transparent 35%, rgba(124, 145, 182, 0.3) 45%, rgba(124, 145, 182, 0.5) 50%, rgba(124, 145, 182, 0.3) 55%, transparent 65%);
+}
+.eyebrow {
+  font-family: var(--font-dotdigital);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  color: var(--color-fog);
+  text-transform: uppercase;
+  font-feature-settings: "tnum";
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+}
+.eyebrow::before, .eyebrow::after {
+  content: "";
+  display: inline-block;
+  width: 32px; height: 1px;
+  background: var(--color-steel-border);
+}
+.hero h1 {
+  font-family: var(--font-aeonikpro);
+  font-size: var(--text-display);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-display);
+  color: #ffffff;
+  margin: 24px auto 16px;
+  letter-spacing: 0;
+}
+.hero .subtitle {
+  font-size: var(--text-subheading);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--leading-subheading);
+  color: var(--color-pebble);
+  max-width: 620px;
+  margin: 0 auto;
+}
+.hero-ctas {
+  margin-top: 36px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.btn-primary {
+  display: inline-block;
+  background: var(--color-electric-iris);
+  color: #ffffff;
+  font-size: var(--text-body);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-body);
+  padding: 10px 16px;
+  border-radius: var(--radius-buttons);
+  text-decoration: none;
+}
+.btn-primary:hover { background: #7450f5; }
+.btn-ghost {
+  display: inline-block;
+  background: transparent;
+  color: var(--color-moonlight);
+  font-size: var(--text-body);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-body);
+  padding: 10px 16px;
+  border-radius: var(--radius-buttons);
+  box-shadow: var(--shadow-subtle-3);
+  text-decoration: none;
+}
+.btn-ghost:hover { box-shadow: var(--shadow-subtle); color: var(--color-glacier); }
+
+/* ---- hero stat chips ---- */
+.stat-row {
+  max-width: 880px;
+  margin: 72px auto 0;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.stat-chip {
+  background: var(--color-graphite-plate);
+  border-radius: var(--radius-cards);
+  box-shadow: var(--shadow-subtle-4);
+  padding: var(--card-padding);
+  text-align: center;
+}
+.stat-chip .value {
+  font-family: var(--font-aeonikpro);
+  font-size: var(--text-heading);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-heading);
+  color: var(--color-glacier);
+}
+.stat-chip .value .accent { color: var(--color-frost-link); }
+.stat-chip .label {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--color-fog);
+  line-height: 1.4;
+}
+
+/* ---- sections ---- */
+section {
+  max-width: var(--page-max-width);
+  margin: var(--section-gap) auto 0;
+  padding: 0 24px;
+  text-align: center;
+}
+.section-head { max-width: var(--content-max-width); margin: 0 auto; }
+section h2 {
+  font-family: var(--font-aeonikpro);
+  font-size: 44px;
+  font-weight: 500;
+  line-height: 1.16;
+  color: var(--color-glacier);
+  margin: 16px auto 16px;
+}
+.section-lede {
+  font-size: 16px;
+  color: var(--color-pebble);
+  max-width: 680px;
+  margin: 0 auto;
+}
+.body-block {
+  max-width: var(--content-max-width);
+  margin: 24px auto 0;
+  text-align: left;
+  color: var(--color-moonlight);
+}
+.body-block p + p { margin-top: 16px; }
+.body-block .muted { color: var(--color-pebble); }
+
+/* ---- feature tiles ---- */
+.tile-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  max-width: 1000px;
+  margin: 48px auto 0;
+}
+.tile {
+  background: var(--color-graphite-plate);
+  border-radius: var(--radius-cards);
+  box-shadow: var(--shadow-subtle-4);
+  padding: var(--card-padding);
+  text-align: left;
+}
+.tile .icon {
+  width: 40px; height: 40px;
+  border-radius: var(--radius-badges);
+  background: rgba(199, 211, 234, 0.06);
+  box-shadow: var(--shadow-subtle), var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.tile .icon svg { stroke: var(--color-moonlight); stroke-width: 1.5; fill: none; }
+.tile h3 {
+  font-size: var(--text-subheading);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--leading-subheading);
+  color: var(--color-ice);
+  margin-bottom: 8px;
+}
+.tile p { font-size: var(--text-body-sm); line-height: var(--leading-body-sm); color: var(--color-pebble); }
+.tile .tag {
+  display: inline-block;
+  margin-top: 14px;
+  font-family: var(--font-dotdigital);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--color-fog);
+  text-transform: uppercase;
+}
+
+/* ---- formula card ---- */
+.formula-card {
+  max-width: var(--content-max-width);
+  margin: 32px auto 0;
+  background: var(--color-graphite-plate);
+  border-radius: var(--radius-cards);
+  box-shadow: var(--shadow-subtle-4);
+  padding: var(--card-padding);
+  font-family: var(--font-dotdigital);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-frost-link);
+  text-align: center;
+  overflow-x: auto;
+}
+.formula-card .note {
+  font-family: var(--font-untitled-sans);
+  font-size: 13px;
+  color: var(--color-fog);
+  margin-top: 10px;
+}
+
+/* ---- figures ---- */
+.figure-card {
+  max-width: 880px;
+  margin: 40px auto 0;
+  background: var(--color-graphite-plate);
+  border-radius: var(--radius-cards);
+  box-shadow: var(--shadow-subtle-4);
+  padding: var(--card-padding);
+}
+.figure-card img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: var(--radius-badges);
+}
+.figure-card figcaption {
+  margin-top: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-fog);
+  text-align: left;
+}
+.figure-card figcaption strong { color: var(--color-pebble); font-weight: 500; }
+
+/* ---- tables ---- */
+.table-card {
+  max-width: 760px;
+  margin: 40px auto 0;
+  background: var(--color-graphite-plate);
+  border-radius: var(--radius-cards);
+  box-shadow: var(--shadow-subtle-4);
+  padding: var(--card-padding);
+  overflow-x: auto;
+}
+table { width: 100%; border-collapse: collapse; font-size: var(--text-body-sm); line-height: var(--leading-body-sm); }
+th {
+  font-family: var(--font-dotdigital);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-fog);
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-steel-border);
+  font-feature-settings: "tnum";
+}
+td {
+  padding: 10px 14px;
+  text-align: left;
+  color: var(--color-moonlight);
+  border-bottom: 1px solid rgba(63, 73, 89, 0.5);
+}
+tr:last-child td { border-bottom: none; }
+td.num { font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; }
+td .flat { color: var(--color-frost-link); font-weight: 500; }
+td .bad { color: var(--color-ember); }
+td .good { color: var(--color-cipher-mint); }
+.table-caption {
+  max-width: 760px;
+  margin: 14px auto 0;
+  font-size: 13px;
+  color: var(--color-fog);
+}
+
+/* ---- limitation list ---- */
+.limit-list {
+  max-width: var(--content-max-width);
+  margin: 32px auto 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.limit-item {
+  background: rgba(47, 52, 62, 0.55);
+  border-radius: var(--radius-badges);
+  box-shadow: var(--shadow-subtle-3);
+  padding: 14px 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-pebble);
+}
+.limit-item strong { color: var(--color-ice); font-weight: 600; }
+
+/* ---- references ---- */
+.refs {
+  max-width: var(--content-max-width);
+  margin: 32px auto 0;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-fog);
+}
+.refs ol { padding-left: 28px; }
+.refs li { margin-bottom: 6px; }
+
+/* ---- footer ---- */
+footer {
+  position: relative;
+  z-index: 1;
+  margin-top: var(--section-gap);
+  border-top: 1px solid rgba(63, 73, 89, 0.6);
+  padding: 48px 24px 56px;
+}
+.footer-inner {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.footer-inner .mono {
+  font-family: var(--font-dotdigital);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  line-height: 1.8;
+  color: var(--color-fog);
+  font-feature-settings: "tnum";
+}
+.footer-inner a { color: var(--color-frost-link); text-decoration: none; }
+.footer-inner a:hover { text-decoration: underline; }
+
+/* ---- motion ----
+   Entrances use the "ease-out-expo" style curve cubic-bezier(0.16, 1, 0.3, 1);
+   hover/press transitions stay at 0.2s/0.15s so interactions feel crisp. */
+.btn-primary {
+  transition: background 0.2s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-primary:active { transform: scale(0.98); }
+.btn-ghost {
+  transition: box-shadow 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-ghost:hover { background: rgba(199, 211, 234, 0.04); }
+.btn-ghost:active { transform: scale(0.98); }
+.tile { transition: box-shadow 0.2s ease, background 0.2s ease; }
+.tile:hover {
+  box-shadow: var(--shadow-subtle), var(--shadow-subtle-4);
+  background: #353b47;
+}
+.tile .icon { transition: box-shadow 0.2s ease; }
+.tile:hover .icon {
+  box-shadow: var(--shadow-subtle-5), var(--shadow-sm);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(15px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes card-in {
+    from { opacity: 0; transform: translateY(15px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  /* starts at the fade-in end state so the handoff between the two is seamless */
+  @keyframes breathe {
+    from { opacity: 1;    transform: translateX(-50%) scale(1); }
+    to   { opacity: 0.82; transform: translateX(-50%) scale(1.03); }
+  }
+
+  .hero .eyebrow, .hero h1, .hero .subtitle, .hero-ctas {
+    animation: rise-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .hero h1       { animation-delay: 0.08s; }
+  .hero .subtitle { animation-delay: 0.16s; }
+  .hero-ctas     { animation-delay: 0.24s; }
+
+  .stat-chip { animation: card-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .stat-chip:nth-child(1) { animation-delay: 0.40s; }
+  .stat-chip:nth-child(2) { animation-delay: 0.50s; }
+  .stat-chip:nth-child(3) { animation-delay: 0.60s; }
+
+  .grid-bg      { animation: fade-in 1.4s ease-out both; }
+  .hero::before { animation: fade-in 1.4s ease-out both; }
+  .hero-glow {
+    animation: fade-in 1.4s ease-out both,
+               breathe 7s ease-in-out 1.4s infinite alternate;
+  }
+}
+
+/* ---- responsive ---- */
+@media (max-width: 860px) {
+  .stat-row, .tile-row { grid-template-columns: 1fr; max-width: 480px; }
+  .hero h1 { font-size: 36px; }
+  section h2 { font-size: 32px; }
+  :root { --section-gap: 80px; }
+}
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<main>
+  <nav>
+    <a class="nav-brand" href="#">FRAME&nbsp;WARP</a>
+    <div class="nav-links">
+      <a class="pill" href="#design">Design</a>
+      <a class="pill" href="#analysis">Analysis</a>
+      <a class="pill" href="#results">Results</a>
+      <a class="pill" href="#limits">Limits</a>
+      <a class="pill" href="FrameWarp_Project_Report.pdf">Report&nbsp;PDF</a>
+    </div>
+  </nav>
+
+  <!-- ============================= HERO ============================= -->
+  <header class="hero">
+    <div class="hero-glow"></div>
+    <div class="eyebrow">B.Tech Final-Year Project · June 2026</div>
+    <h1>Frame Warp</h1>
+    <p class="subtitle">Client-side frame reprojection for motion-to-photon latency mitigation in browser and cloud-streamed rendering. The latency the network adds does not have to be the latency the player feels.</p>
+    <div class="hero-ctas">
+      <a class="btn-primary" href="FrameWarp_Project_Report.pdf">Read the full report</a>
+      <a class="btn-ghost" href="#results">See the measurements</a>
+    </div>
+  </header>
+
+  <div class="stat-row">
+    <div class="stat-chip">
+      <div class="value">91&thinsp;ms <span class="accent">→ 17&thinsp;ms</span></div>
+      <div class="label">View-direction staleness, local demo (30&nbsp;FPS source, 80&nbsp;ms pipeline delay, 60&nbsp;Hz display)</div>
+    </div>
+    <div class="stat-chip">
+      <div class="value">Flat at <span class="accent">~17&thinsp;ms</span></div>
+      <div class="label">Warped view latency over WebRTC at 40 / 100 / 160&nbsp;ms one-way network delay — and independent of jitter</div>
+    </div>
+    <div class="stat-chip">
+      <div class="value">+73% <span class="accent">→ +9%</span></div>
+      <div class="label">Guard-band rendering overhead on calm input with the velocity-adaptive margin policy</div>
+    </div>
+  </div>
+
+  <!-- ============================= PROBLEM ============================= -->
+  <section id="problem">
+    <div class="section-head">
+      <div class="eyebrow">The problem</div>
+      <h2>Your view lags your hand</h2>
+      <p class="section-lede">Motion-to-photon latency is the delay between physical input and the photons that reflect it — the dominant feel-defining property of interactive rendering.</p>
+    </div>
+    <div class="body-block">
+      <p>A display refreshes at a fixed rate, but the underlying 3D scene may be redrawn far less often — a demanding game at 30&nbsp;FPS produces a new frame only every 33&nbsp;ms — and every stage of a real pipeline (input sampling, simulation, rendering, queueing, and in cloud streaming: encoding, transmission, decoding) holds the user's input a little longer before it becomes visible.</p>
+      <p class="muted">Prior measurement studies place cloud gaming latencies in the 100–300&nbsp;ms range, with measurable degradation of player performance and quality of experience well below that. For camera control it is directly felt: the view lags the hand.</p>
+    </div>
+    <div class="formula-card">
+      L<sub>total</sub> = L<sub>input</sub> + L<sub>uplink</sub> + L<sub>render</sub> + L<sub>encode</sub> + L<sub>downlink</sub> + L<sub>decode</sub> + L<sub>composite</sub>
+      <div class="note">For camera rotation, client-side reprojection replaces every term except the last.</div>
+    </div>
+  </section>
+
+  <!-- ============================= IDEA ============================= -->
+  <section id="idea">
+    <div class="section-head">
+      <div class="eyebrow">The idea</div>
+      <h2>Two clocks, one warp</h2>
+      <p class="section-lede">Mouse input is available at hundreds of hertz even when frames are not. So run two clocks — and let the fast one steer the slow one's pixels.</p>
+    </div>
+    <div class="body-block">
+      <p>The scene is rendered into a texture at its slow native rate. At every display refresh, the latest texture is warped — shifted by the camera rotation that has occurred since the frame was rendered — so the displayed view direction tracks the freshest input even though the pixels are old. The technique descends from post-rendering 3D warping and image-based rendering, reached consumers as VR asynchronous timewarp, and is the substance of NVIDIA's announced Reflex&nbsp;2 Frame Warp.</p>
+    </div>
+    <div class="tile-row">
+      <div class="tile">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5"/><path d="M10 5.5 V10 L13 12"/></svg></div>
+        <h3>The fast clock</h3>
+        <p>Pointer-lock mouse input sampled on every event (125–1000&nbsp;Hz) maintains the camera yaw and pitch — the freshest pose the system has.</p>
+        <span class="tag">input.js</span>
+      </div>
+      <div class="tile">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="10" rx="1.5"/><path d="M7 17h6"/></svg></div>
+        <h3>The slow clock</h3>
+        <p>The 3D scene renders at a capped 30&nbsp;FPS into an off-screen texture, deliberately using an orientation from a configurable interval in the past — the always-on simulated condition of a heavy pipeline.</p>
+        <span class="tag">lag.js</span>
+      </div>
+      <div class="tile">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 14 L8 8 L12 11 L16 5"/><path d="M4 17 h12"/></svg></div>
+        <h3>The compositor</h3>
+        <p>Every display refresh, a fullscreen-quad shader draws the newest texture shifted by the angular delta between freshest input and the frame's pose: Δu&nbsp;=&nbsp;−Δyaw/fov<sub>x</sub>, Δv&nbsp;=&nbsp;Δpitch/fov<sub>y</sub>.</p>
+        <span class="tag">warp-shader.js</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= DESIGN / ARTEFACTS ============================= -->
+  <section id="design">
+    <div class="section-head">
+      <div class="eyebrow">System design</div>
+      <h2>Three artefacts, one compositor</h2>
+      <p class="section-lede">A local demo that makes the problem falsifiable, the same pipeline split across a real network, and a deterministic instrument that turns the claims into automated tests.</p>
+    </div>
+    <div class="tile-row">
+      <div class="tile">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="3"/><circle cx="10" cy="10" r="0.5"/></svg></div>
+        <h3>1 · The shooting range</h3>
+        <p>A browser demo (Three.js/WebGL) where a 30&nbsp;FPS, deliberately delayed pipeline is reprojected to display rate. Hit detection is honest: a click fires one ray from the orientation the screen is currently displaying, so the outcome can differ between modes only through the latency the warp removes. Press W and watch tracked shots start to land.</p>
+        <span class="tag">Local · src/</span>
+      </div>
+      <div class="tile">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M3 13 a5 5 0 0 1 2-9.5 a5.5 5.5 0 0 1 10.5 1.5 a4 4 0 0 1 1.5 8"/><path d="M10 9 v7 M7.5 13.5 L10 16 L12.5 13.5"/></svg></div>
+        <h3>2 · The cloud pipeline</h3>
+        <p>A server window streams the rendered scene as WebRTC video with configurable one-way delay and jitter; the player window reprojects the decoded stream using local input. Pose synchronisation is frame-exact: a 16-bit frame identifier is baked into the frame's own pixels, hidden inside the guard-band margin.</p>
+        <span class="tag">Streamed · src/cloud/</span>
+      </div>
+      <div class="tile">
+        <div class="icon"><svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 4 h12 v12 h-12 z"/><path d="M7 13 v-3 M10 13 v-6 M13 13 v-4"/></svg></div>
+        <h3>3 · The replay instrument</h3>
+        <p>Recorded or synthetic input traces re-run through the full pipeline logic headlessly and bit-reproducibly. Same input, different pipeline — every configuration comparison is perfectly controlled, and every figure below is generated from it or from live CSV exports.</p>
+        <span class="tag">Deterministic · src/replay/</span>
+      </div>
+    </div>
+    <div class="body-block">
+      <p class="muted">A shifted image needs pixels beyond its own edge, so the scene renders at a wider field of view than displayed and the shader shows the central crop — the <strong style="color:var(--color-ice); font-weight:600;">guard band</strong> (margin g&nbsp;=&nbsp;0.12 per side, with the tangent-exact FOV relation tan(F<sub>render</sub>/2)&nbsp;=&nbsp;tan(F<sub>display</sub>/2)/(1−2g)). Edge clamping remains only as the fallback when motion exhausts the margin — the failure mode the analysis bounds.</p>
+    </div>
+  </section>
+
+  <!-- ============================= ANALYSIS ============================= -->
+  <section id="analysis">
+    <div class="section-head">
+      <div class="eyebrow">Theoretical analysis</div>
+      <h2>Limits stated as precisely as gains</h2>
+      <p class="section-lede">The warp's error model is written down, bounded, and then checked against the instrument — including one bound the instrument corrected.</p>
+    </div>
+    <div class="tile-row">
+      <div class="tile">
+        <h3>Jitter immunity</h3>
+        <p>If the required delta is within the guard margin, the displayed view direction equals the input pose sampled at composite time exactly. The frame's age determines only which pose enters the subtraction — the subtraction then cancels it. Perceived rotation latency is independent of both the mean and the variance of frame age.</p>
+        <span class="tag">§4.2</span>
+      </div>
+      <div class="tile">
+        <h3>Guard-band exhaustion</h3>
+        <p>The largest compensable rotation is Δ<sub>max</sub>&nbsp;=&nbsp;16.98° at the default configuration. At constant angular velocity, clamping is predicted to begin between 130.6 and 212.2&nbsp;deg/s; the simulator measures onset at ≈143&nbsp;deg/s — inside the band. The display-tick term in the age bound was found by a failing automated test.</p>
+        <span class="tag">§4.3 · Figure 2</span>
+      </div>
+      <div class="tile">
+        <h3>Linearisation &amp; parallax</h3>
+        <p>The shader's shift is linear in angle while a perspective image is linear in its tangent: brisk tracking at 60&nbsp;deg/s with a 100&nbsp;ms-old frame misplaces centre pixels by ≈22&nbsp;px, converging to zero as rotation stops. Translation parallax is uncompensated and bounded analytically — the motivation for depth-aware reprojection.</p>
+        <span class="tag">§4.4–4.5</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= RESULTS ============================= -->
+  <section id="results">
+    <div class="section-head">
+      <div class="eyebrow">Results</div>
+      <h2>Measured, not asserted</h2>
+      <p class="section-lede">Every latency number is computed from real timestamps, exported as CSV, and — for the analytic claims — reproduced by automated tests.</p>
+    </div>
+
+    <figure class="figure-card">
+      <img src="figures/fig1-lag-sweep.png" alt="View-direction latency vs injected pipeline delay: the without-warp series rises linearly while the warped series stays flat at one display interval.">
+      <figcaption><strong>Figure 1.</strong> View-direction latency vs injected pipeline delay (replay instrument, wander trace, 60&nbsp;Hz display). The without-warp series rises with delay; the warped view direction stays at one display interval.</figcaption>
+    </figure>
+
+    <div class="table-card">
+      <table>
+        <thead><tr><th>One-way delay</th><th>E2E latency, warp off</th><th>View latency, warp on</th></tr></thead>
+        <tbody>
+          <tr><td class="num">40&nbsp;ms</td><td class="num"><span class="bad">~150&nbsp;ms</span></td><td class="num"><span class="flat">~17&nbsp;ms</span></td></tr>
+          <tr><td class="num">100&nbsp;ms</td><td class="num"><span class="bad">~264&nbsp;ms</span></td><td class="num"><span class="flat">~17&nbsp;ms</span></td></tr>
+          <tr><td class="num">160&nbsp;ms</td><td class="num"><span class="bad">~381&nbsp;ms</span></td><td class="num"><span class="flat">~17&nbsp;ms</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-caption">Table 1. Measured cloud-pipeline latency on loopback (CSV export, per-mode means). The pixel frame tag resolved the displayed frame's pose exactly throughout; timestamp matching agreed ~99.5% on a calm network, ~95% under jitter.</p>
+
+    <figure class="figure-card">
+      <img src="figures/fig2-onset.png" alt="Guard-band exhaustion under constant angular velocity: measured clamp rate and residual error with analytic onset bounds shaded.">
+      <figcaption><strong>Figure 2.</strong> Guard-band exhaustion under constant angular velocity: measured clamp rate and residual error, with the analytic onset bounds shaded. Clamping begins at ≈143&nbsp;deg/s, inside the predicted 130.6–212.2&nbsp;deg/s band — the project's theory-meets-instrument result.</figcaption>
+    </figure>
+
+    <figure class="figure-card">
+      <img src="figures/fig3-adaptive.png" alt="Rendered-pixel cost of the guard band, fixed vs velocity-adaptive, with clamp rates annotated.">
+      <figcaption><strong>Figure 3.</strong> Rendered-pixel cost of the guard band, fixed vs velocity-adaptive, with clamp rates annotated (replay benchmark, three wander traces). The adaptive policy sizes the margin per rendered frame from the worst angular speed in the preceding 500&nbsp;ms.</figcaption>
+    </figure>
+
+    <div class="table-card">
+      <table>
+        <thead><tr><th>Trace</th><th>Policy</th><th>Pixel cost (×display)</th><th>Clamp rate</th></tr></thead>
+        <tbody>
+          <tr><td>calm</td><td>fixed 0.12</td><td class="num">1.73</td><td class="num">0%</td></tr>
+          <tr><td>calm</td><td>adaptive</td><td class="num"><span class="good">1.33</span></td><td class="num">0%</td></tr>
+          <tr><td>moderate</td><td>fixed 0.12</td><td class="num">1.73</td><td class="num"><span class="bad">0.7%</span></td></tr>
+          <tr><td>moderate</td><td>adaptive</td><td class="num">1.92</td><td class="num"><span class="good">0%</span></td></tr>
+          <tr><td>hot</td><td>fixed 0.12</td><td class="num">1.73</td><td class="num"><span class="bad">8.6%</span></td></tr>
+          <tr><td>hot</td><td>adaptive</td><td class="num">2.47</td><td class="num"><span class="good">0%</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-caption">Table 2. Fixed vs adaptive guard band (replay benchmark). The adaptive policy wins on cost or on quality on every trace, and on both for calm input.</p>
+
+    <div class="body-block">
+      <p class="muted">Measurement caveat, stated plainly: the without-warp figure is a directly measured staleness; the with-warp figure is the display-frame interval — a proxy floor that excludes mouse polling, GPU queueing and display scanout, none of which a browser can observe. All comparative claims are between quantities measured the same way.</p>
+    </div>
+  </section>
+
+  <!-- ============================= LIMITS ============================= -->
+  <section id="limits">
+    <div class="section-head">
+      <div class="eyebrow">Limitations</div>
+      <h2>What does not survive the network</h2>
+      <p class="section-lede">The honest capability table — rotation-only reprojection cannot compensate everything, and the report says exactly what breaks where.</p>
+    </div>
+
+    <div class="table-card" style="max-width: 880px;">
+      <table>
+        <thead><tr><th>Capability</th><th>Local demo</th><th>Cloud demo</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Rotation warp</td><td><span class="good">Yes</span></td><td><span class="good">Yes</span></td><td>Needs only the pose delta</td></tr>
+          <tr><td>Guard band</td><td><span class="good">Yes</span></td><td><span class="good">Yes</span></td><td>Server renders wide FOV; client crops</td></tr>
+          <tr><td>Motion vectors</td><td><span class="good">Yes</span></td><td><span class="bad">No</span></td><td>YUV 4:2:0 video has no channel for per-pixel velocity</td></tr>
+          <tr><td>De-ghosting clamp</td><td><span class="good">Yes</span></td><td><span class="bad">Inert</span></td><td>With no velocity term the clamp is mathematically a no-op</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-caption">Table 3. Honest capability table.</p>
+
+    <div class="limit-list">
+      <div class="limit-item"><strong>Rotation only.</strong> Object motion, disocclusion and translation parallax are not compensated; the moving target visibly steps at the source rate in the cloud demo.</div>
+      <div class="limit-item"><strong>Proxy floor.</strong> The warped-latency figure is not hardware motion-to-photon; establishing the absolute figure requires external instrumentation (photodiode or high-speed camera).</div>
+      <div class="limit-item"><strong>Simulation-level adaptive result.</strong> A real video encoder reacts to mid-stream FOV changes; the surviving saving must be measured in the live cloud pipeline before being quoted as a systems result.</div>
+      <div class="limit-item"><strong>Cold flicks.</strong> The window-max velocity estimator adapts one frame late to a flick from rest; the safety factor bounds, but does not eliminate, first-frame clamping on pathological input.</div>
+    </div>
+
+    <div class="body-block">
+      <p class="muted"><strong style="color:var(--color-ice); font-weight:600;">Future work:</strong> hardware ground-truth instrumentation, a controlled user study (within-subjects, warp&nbsp;×&nbsp;delay&nbsp;×&nbsp;jitter), depth-aware streamed reprojection that turns the parallax error term into signal, a tangent-exact per-pixel remap, and a WebTransport port as the protocol matures.</p>
+    </div>
+  </section>
+
+  <!-- ============================= CONCLUSION ============================= -->
+  <section id="conclusion">
+    <div class="section-head">
+      <div class="eyebrow">Conclusion</div>
+      <h2>A working system and a defensible claim</h2>
+    </div>
+    <div class="body-block">
+      <p>This project built, measured and analysed a client-side answer to motion-to-photon latency that works at the only place a streaming client can act: the final composite. A video stream that is genuinely hundreds of milliseconds old can be displayed with a view direction one display interval old — flat against network delay and provably indifferent to jitter — using no server modification beyond a wider field of view and an in-band frame tag.</p>
+      <p style="color: var(--color-glacier); font-weight: 500;">For camera rotation in cloud-streamed rendering, the latency the network adds does not have to be the latency the player feels.</p>
+    </div>
+    <div class="hero-ctas">
+      <a class="btn-primary" href="FrameWarp_Project_Report.pdf">Read the full report</a>
+    </div>
+  </section>
+
+  <!-- ============================= REFERENCES ============================= -->
+  <section id="references">
+    <div class="section-head">
+      <div class="eyebrow">Selected references</div>
+    </div>
+    <div class="refs">
+      <ol>
+        <li>J. Carmack, "Latency Mitigation Strategies," AltDevBlogADay, 2013.</li>
+        <li>J. M. P. van Waveren, "The Asynchronous Time Warp for Virtual Reality on Consumer Hardware," Proc. ACM VRST, 2016.</li>
+        <li>W. R. Mark, L. McMillan, and G. Bishop, "Post-Rendering 3D Warping," Proc. I3D, 1997.</li>
+        <li>K.-T. Chen et al., "Measuring the Latency of Cloud Gaming Systems," Proc. ACM Multimedia, 2011.</li>
+        <li>M. Claypool and K. Claypool, "Latency and Player Actions in Online Games," CACM, 2006.</li>
+        <li>T. Kamarainen et al., "A Measurement Study on Achieving Imperceptible Latency in Mobile Cloud Gaming," Proc. ACM MMSys, 2017.</li>
+        <li>K. Lee et al., "Outatime: Using Speculation to Enable Low-Latency Continuous Interaction for Mobile Cloud Gaming," Proc. ACM MobiSys, 2015.</li>
+        <li>NVIDIA, "Reflex 2 with Frame Warp," announced CES 2025.</li>
+        <li>M. Siekkinen and T. Kamarainen, "Streaming Real-Time Rendered Scenes as 3D Gaussians," arXiv:2604.02851, 2026.</li>
+      </ol>
+      <p style="margin-top: 12px;">The full report contains 28 references; see the PDF for the complete list.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <div class="mono">
+      FRAME WARP · PROJECT REPORT<br>
+      ISAAC · URK23AI1035<br>
+      B.TECH ARTIFICIAL INTELLIGENCE AND DATA SCIENCE
+    </div>
+    <div class="mono" style="text-align: right;">
+      KARUNYA INSTITUTE OF TECHNOLOGY AND SCIENCES<br>
+      COIMBATORE · JUNE 2026<br>
+      <a href="FrameWarp_Project_Report.pdf">FRAMEWARP_PROJECT_REPORT.PDF</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
