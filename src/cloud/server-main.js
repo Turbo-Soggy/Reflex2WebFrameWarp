@@ -98,6 +98,13 @@ const remoteInput = { seq: -1, yaw: 0, pitch: 0 };
 function frame() {
   requestAnimationFrame(frame);
   const now = performance.now();
+
+  // FAST tick (display rate): push anything whose network transit has elapsed
+  // out of the delay queues — frames into the captured canvas, inputs into
+  // the camera (Stage C4).
+  releaseDue(now);
+
+  // SLOW tick (30 FPS): render the next frame.
   if (now < nextRenderDue) return;
   nextRenderDue = Math.max(nextRenderDue + RENDER_INTERVAL, now - RENDER_INTERVAL);
 
@@ -110,24 +117,93 @@ function frame() {
   targets.update(t);
   renderer.render(world.scene, camera);
 
-  // Stage C2: tag the pixels and ship the matching pose over the DataChannel.
-  // Same id in both → the client can verify the match against the pixels.
+  // Stage C2: tag the pixels with the frame id; Stage C4: into the delay
+  // queue rather than straight to capture. The pose travels with the frame
+  // and is sent when the frame is RELEASED — video, tag and pose stay
+  // coherent, all genuinely `delayMs` old by the time the player sees them.
   frameId++;
   drawFrameTag(frameId);
-  if (dc.readyState === 'open') {
-    dc.send(JSON.stringify({ type: 'pose', frameId, yaw, pitch, t: now }));
-    if (frameId % SOURCE_FPS === 0) {
-      setStat('stat-pose', `frame ${frameId} · yaw ${(yaw * 180 / Math.PI).toFixed(1)}°`, true);
-    }
-  }
+  enqueueFrame(now, frameId, yaw, pitch);
 
   if (frameId % SOURCE_FPS === 0) {
     setStat('stat-render', `${frameId} frames @ ${SOURCE_FPS} FPS`);
+    setStat('stat-pose', `frame ${frameId} · yaw ${(yaw * 180 / Math.PI).toFixed(1)}°`, true);
+    setStat('stat-delay', jitterOn
+      ? `${delayMs} ms + jitter (now ${effectiveDelay(now).toFixed(0)} ms one-way)`
+      : `${delayMs} ms one-way, each direction`, null);
   }
 }
 
-// --- Capture the canvas as a media stream --------------------------------------
-const stream = canvas.captureStream(SOURCE_FPS);
+// --- Stage C4: the simulated network — a delay buffer in front of capture ------
+// The visible canvas above is the LIVE render (what the game produces *now*).
+// What the player receives comes from THIS hidden 2D canvas, which is fed each
+// frame only after it has sat in a queue for the configured one-way delay.
+// The pose packet for a frame is sent at the same moment the frame is released,
+// so video, pixel tag and pose stay coherent — and are all genuinely old.
+const captureCanvas = document.createElement('canvas');
+captureCanvas.width = CAPTURE_W;
+captureCanvas.height = CAPTURE_H;
+const captureCtx = captureCanvas.getContext('2d');
+
+// Network knobs (wired to the panel below). delayMs is ONE-WAY and applies to
+// both directions: frames going down AND input packets coming up.
+let delayMs = 40;
+let jitterOn = false;
+
+// Jitter: the one-way delay wanders 40–140 ms (sin, 0.25 Hz). A fixed delay is
+// something a player adapts to; a WANDERING one is what makes real cloud
+// gaming unplayable — and the warp is mathematically immune to it, because the
+// delta is computed per-displayed-frame and is exact whatever the frame's age.
+function effectiveDelay(nowMs) {
+  return delayMs + (jitterOn ? 50 + 50 * Math.sin((nowMs / 1000) * 2 * Math.PI * 0.25) : 0);
+}
+
+// Frame queue: pooled 2D canvases so we allocate ~a dozen, not one per frame.
+const framePool = [];
+const pendingFrames = []; // { cnv, frameId, yaw, pitch, due } — due ascending
+let lastFrameDue = 0;
+
+function enqueueFrame(now, id, yaw, pitch) {
+  const cnv = framePool.pop() || (() => {
+    const c = document.createElement('canvas');
+    c.width = CAPTURE_W; c.height = CAPTURE_H;
+    return c;
+  })();
+  // Copy the live WebGL canvas (same-tick, so the drawing buffer is intact).
+  cnv.getContext('2d').drawImage(canvas, 0, 0);
+  // Jitter must never REORDER frames (a real jittery network still delivers an
+  // RTP stream in order) — clamp each due time to after the previous one.
+  const due = Math.max(now + effectiveDelay(now), lastFrameDue + 1);
+  lastFrameDue = due;
+  pendingFrames.push({ cnv, frameId: id, yaw, pitch, due });
+}
+
+// Input queue: the player's packets also cross the simulated network.
+const pendingInputs = []; // { msg, due }
+
+// Release loop: runs at display rate (much finer than the 30 FPS source), so
+// release timing is accurate to a display tick.
+function releaseDue(now) {
+  while (pendingFrames.length > 0 && pendingFrames[0].due <= now) {
+    const f = pendingFrames.shift();
+    captureCtx.drawImage(f.cnv, 0, 0);
+    framePool.push(f.cnv);
+    if (dc.readyState === 'open') {
+      dc.send(JSON.stringify({ type: 'pose', frameId: f.frameId, yaw: f.yaw, pitch: f.pitch, t: now }));
+    }
+  }
+  while (pendingInputs.length > 0 && pendingInputs[0].due <= now) {
+    const { msg } = pendingInputs.shift();
+    if (msg.seq > remoteInput.seq) { // latest-wins, as before
+      remoteInput.seq = msg.seq;
+      remoteInput.yaw = msg.yaw;
+      remoteInput.pitch = msg.pitch;
+    }
+  }
+}
+
+// --- Capture the DELAYED canvas as a media stream -------------------------------
+const stream = captureCanvas.captureStream(SOURCE_FPS);
 const [videoTrack] = stream.getVideoTracks();
 videoTrack.contentHint = 'motion';
 setStat('stat-capture', `${CAPTURE_W}×${CAPTURE_H} @ ${SOURCE_FPS} FPS, hint=motion`, true);
@@ -184,19 +260,17 @@ dc.addEventListener('open', () => {
   }, 1000);
 });
 
-let inputsApplied = 0;
+let inputsQueued = 0;
 dc.addEventListener('message', (e) => {
   const msg = JSON.parse(e.data);
   if (msg.type === 'input') {
-    // The player's pose (Stage C3) — keep only the freshest by seq.
-    if (msg.seq > remoteInput.seq) {
-      remoteInput.seq = msg.seq;
-      remoteInput.yaw = msg.yaw;
-      remoteInput.pitch = msg.pitch;
-      inputsApplied++;
-      if (inputsApplied % 120 === 0) {
-        setStat('stat-input', `seq ${msg.seq} · yaw ${(msg.yaw * 180 / Math.PI).toFixed(1)}°`, true);
-      }
+    // The player's pose (Stage C3), crossing the simulated network (C4): it
+    // is applied only after the one-way delay, in releaseDue(). The seq
+    // filter there still keeps latest-wins semantics after the wait.
+    pendingInputs.push({ msg, due: performance.now() + delayMs });
+    inputsQueued++;
+    if (inputsQueued % 120 === 0) {
+      setStat('stat-input', `seq ${msg.seq} · yaw ${(msg.yaw * 180 / Math.PI).toFixed(1)}° (+${delayMs} ms)`, true);
     }
   } else if (msg.type === 'ping') {
     // The client's ping: echo it straight back so IT can measure RTT.
@@ -228,6 +302,20 @@ const session = Math.random().toString(36).slice(2, 10);
 })().catch((err) => {
   setStat('stat-signal', `handshake failed: ${err.message}`, false);
   console.error('[CloudServer] handshake failed', err);
+});
+
+// --- Network-condition controls (Stage C4) ----------------------------------
+const slDelay = document.getElementById('sl-delay');
+const valDelay = document.getElementById('val-delay');
+slDelay.addEventListener('input', () => {
+  delayMs = parseFloat(slDelay.value);
+  valDelay.textContent = delayMs;
+});
+valDelay.textContent = slDelay.value;
+delayMs = parseFloat(slDelay.value);
+
+document.getElementById('cb-jitter').addEventListener('change', (e) => {
+  jitterOn = e.target.checked;
 });
 
 // Convenience: open the player window from here (user gesture → no popup block).

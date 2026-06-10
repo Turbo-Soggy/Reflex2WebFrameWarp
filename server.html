@@ -32,6 +32,20 @@
     <canvas id="server-view" width="1280" height="720"></canvas>
   </main>
 
+  <!-- Network conditions (Stage C4): the knobs a judge turns. The delay is
+       one-way and applies to both directions (frames down, input up). -->
+  <div id="network-panel">
+    <div class="param-title">Simulated network</div>
+    <label class="param-row">
+      <span>One-way delay <b><span id="val-delay">40</span> ms</b></span>
+      <input type="range" id="sl-delay" min="0" max="200" step="5" value="40" />
+    </label>
+    <label class="param-row jitter-row">
+      <input type="checkbox" id="cb-jitter" />
+      <span>Jitter — delay wanders 40–140 ms (this is what makes cloud gaming unplayable)</span>
+    </label>
+  </div>
+
   <!-- Plumbing health, one row per stage of the C1 checklist. -->
   <div id="status">
     <div class="row"><span class="label">Render loop</span><span id="stat-render">starting…</span></div>
@@ -42,6 +56,7 @@
     <div class="row"><span class="label">Echo (server→client→server)</span><span id="stat-echo">—</span></div>
     <div class="row"><span class="label">Pose stream (C2)</span><span id="stat-pose">—</span></div>
     <div class="row"><span class="label">Remote input (C3)</span><span id="stat-input">none yet — camera holds at 0°</span></div>
+    <div class="row"><span class="label">Network delay (C4)</span><span id="stat-delay">—</span></div>
   </div>
 
   <script type="module" src="./src/cloud/server-main.js"></script>

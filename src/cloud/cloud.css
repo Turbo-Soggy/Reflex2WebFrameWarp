@@ -97,6 +97,35 @@ kbd {
   padding: 0 4px;
 }
 
+/* Network-condition panel (server page, Stage C4). */
+#network-panel {
+  margin: 14px auto 0;
+  max-width: 720px;
+  background: var(--panel);
+  border: 1px solid #1d2430;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font: 13px var(--mono);
+}
+#network-panel .param-title {
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+#network-panel .param-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+#network-panel input[type="range"] { flex: 1; max-width: 320px; }
+#network-panel .jitter-row { justify-content: flex-start; }
+#network-panel .jitter-row span { color: var(--muted); }
+
 /* Status panel: one row per plumbing stage, coloured by health. */
 #status {
   margin: 14px auto 0;
