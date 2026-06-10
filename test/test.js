@@ -378,6 +378,26 @@ test('measured clamp onset falls within the analytic bounds (theory ↔ instrume
     `${bounds.upperDegPerSec.toFixed(1)}]`);
 });
 
+test('linearisation error: uniform UV shift is exact at sec²θ = 2·tan(F/2)/F', () => {
+  // THEORY.md §4: the shader shifts UV linearly in angle (δ/F), but
+  // perspective is linear in tan(angle). First-order error per radian:
+  // e(θ)/δ = sec²θ/2T − 1/F. Check the zero crossing and the signs at
+  // centre/edge numerically against the exact tangent remap.
+  const F = 2 * Math.atan(Math.tan((75 * Math.PI / 180) / 2) * (16 / 9)); // demo fovX
+  const T = Math.tan(F / 2);
+  const exactShift = (theta, d) => (Math.tan(theta + d) - Math.tan(theta)) / (2 * T);
+  const appliedShift = d => d / F;
+  const d = 1e-4; // small delta → first-order regime
+  const err = (theta) => (appliedShift(d) - exactShift(theta, d)) / d;
+
+  const thetaZero = Math.acos(Math.sqrt(F / (2 * T))); // sec²θ = 2T/F
+  approx(err(thetaZero), 0, 1e-4);                  // exact at the crossing
+  assert.ok(err(0) > 0.1, 'centre: uniform shift over-slides');
+  assert.ok(err(F / 2 * 0.999) < -0.3, 'edge: uniform shift under-slides');
+  // And the closed-form: e/δ at centre = 1/F − 1/2T … = +0.166 (overshoot).
+  approx(err(0), 1 / F - 1 / (2 * T), 1e-4);
+});
+
 test('no-warp error grows with lag; warp error stays flat (the thesis, headless)', () => {
   const trace = synthSineSweep({ amplitudeDeg: 30, freqHz: 0.5, durationMs: 5000 });
   const low = simulate(trace, { lagMs: 40 }).summary;
