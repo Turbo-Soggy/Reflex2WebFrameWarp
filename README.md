@@ -185,6 +185,79 @@ Read them top to bottom — this is the order they build on each other.
 
 ---
 
+## Cloud streaming demo (`cloud-stream` branch)
+
+The same warp, with a **real network** between the two clocks. The pipeline is
+split across two browser windows connected by WebRTC: one plays the *cloud
+server* (renders the range at 30 FPS and streams it as encoded video), the
+other plays the *player* (receives the stream and reprojects it with local
+pointer-lock input). The stream the player sees is genuinely 40–150+ ms old;
+the view direction is one display frame old.
+
+**Run it:** `python serve.py`, open `http://localhost:8000/server.html`, click
+**“Open player window”**. The pages handshake automatically through
+`localStorage` (same-origin signaling — no STUN/TURN, localhost only) and
+auto-heal if either window is reloaded.
+
+**Demo script:** set 80 ms delay, warp off → sluggish. Press `W` → instant.
+Crank to 150 ms → still instant. Jitter on, warp off → unplayable. `W` →
+perfectly stable. *“The video is 150 ms old. The view direction is one display
+frame old — ~17 ms on this monitor.”*
+
+### The cloud files (study order, after the local demo)
+
+1. **`src/cloud/signaling.js`** — localStorage as the signaling server:
+   same-origin `storage` events carry the offer/answer SDP between windows.
+   Session ids guard against stale handshakes; ICE is non-trickle (localhost).
+2. **`src/cloud/frame-tag.js`** — the frame-matching answer. The server bakes
+   each frame's id into a 4×4 black/white pixel grid in the corner (16 bits,
+   16 px cells); the client reads it back from the decoded video. Exact by
+   construction; the corner lives in the guard band so the crop hides it.
+3. **`src/cloud/pose-sync.js`** — client ring buffer of pose packets.
+   `byFrameId()` (from the tag) is primary; timestamp matching ("Plan A") is
+   kept and *scored live against the tag*: ~99.5 % agreement on a calm
+   network, degrading to ~95 % under jitter — measured justification for the
+   tag-primary design.
+4. **`src/cloud/server-main.js`** — the cloud server page: fixed 1280×720
+   capture (the encoder must never rescale mid-stream;
+   `degradationPreference: 'maintain-resolution'`), 30 FPS render loop, the
+   **simulated network** (delay queue in front of capture + the same one-way
+   delay on incoming input; jitter wanders the delay 40–140 ms without ever
+   reordering frames), and the DataChannel (unreliable + unordered, like a
+   real game-streaming control channel).
+5. **`src/cloud/client-main.js`** — the player page: `<video>` →
+   `THREE.VideoTexture` → **the same `QuadRenderer`/warp shader as the local
+   demo**, driven by `(local pose − displayed frame's pose)` per display
+   refresh. Forwards input as full-pose latest-wins packets (~120 Hz). Reuses
+   `Latency`/`LatencyChart` for the live chart and extends `Recorder` for CSV.
+6. **`src/cloud/cloud-recorder.js`** — CSV export with a per-mode summary
+   block (mean/p95/p99 of the *perceived* view-direction latency).
+
+### The headline numbers (measured on loopback)
+
+| One-way delay | e2e latency, warp off | View latency, warp on |
+|---|---|---|
+| 40 ms  | ~150 ms | ~17 ms |
+| 100 ms | ~264 ms | ~17 ms |
+| 160 ms | ~381 ms | ~17 ms |
+
+Warp-off tracks the round trip linearly (slope 2 plus ~65 ms of codec +
+frame-interval overhead); the warp line is flat at one display-frame interval
+regardless of network delay — and it is *mathematically immune to jitter*,
+because the delta is computed per displayed frame and is exact whatever that
+frame's age.
+
+### What survives the network (honest capability table)
+
+| Capability | Local demo | Cloud demo | Why |
+|---|---|---|---|
+| Rotation warp | ✅ | ✅ | Only needs the pose delta |
+| Guard band | ✅ | ✅ | Server renders the wide FOV; client crops |
+| Motion vectors | ✅ | ❌ | The stream is YUV 4:2:0 video — no channel exists for per-pixel velocity, and chroma subsampling + lossy quantisation would destroy its precision anyway |
+| De-ghosting clamp | ✅ | ✅ | Shared shader (with no velocity term it is mathematically inert; it exists for the local demo's motion vectors) |
+
+---
+
 ## The core idea (one paragraph)
 
 A 30 FPS display only shows a new frame every ~33 ms, but the mouse reports
@@ -212,4 +285,5 @@ vectors) — that's the documented limitation and the motivation for future work
 - [x] **Polish** — Local Three.js, no-cache dev server, parameter sliders, CSV export, procedural textures.
 - [x] **Shooter** — Indoor range, laterally-moving targets, honest camera-orientation hit detection, slim accuracy scoreboard, demo mode (`D`).
 - [x] **Single-screen** — Lag hardcoded always-on; collapsed the split into one fullscreen viewport; `W` toggles Frame Warp; persistent WITHOUT/WITH-warp scoreboard.
+- [x] **Cloud streaming** (`cloud-stream` branch) — the pipeline split across WebRTC: server/player windows, pixel-tag pose sync, simulated delay + jitter, end-to-end measurement + CSV. Stages C1–C5 of the cloud plan; see the section above.
 - [ ] **Stage 4** — Report (DOCX) + slides (PPTX).
