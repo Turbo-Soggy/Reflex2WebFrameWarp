@@ -27,8 +27,11 @@ import {
   synthConstantVelocity, synthSineSweep, synthWander,
 } from '../src/replay/trace.js';
 import {
-  simulate, resultToCSV, clampOnsetBoundsDegPerSec,
+  simulate, resultToCSV, clampOnsetBoundsDegPerSec, maxWarpRad, DEFAULT_CONFIG,
 } from '../src/replay/pipeline-sim.js';
+import {
+  guardForSpeed, makeAdaptiveGuardPolicy, ADAPTIVE_DEFAULTS,
+} from '../src/replay/adaptive-guard.js';
 
 // --- tiny green/red harness ------------------------------------------------
 let passed = 0, failed = 0;
@@ -406,6 +409,40 @@ test('no-warp error grows with lag; warp error stays flat (the thesis, headless)
     'no-warp error should scale with injected lag');
   approx(low.errWarpDeg.max, 0, 1e-9);   // peak sine velocity ~94 deg/s,
   approx(high.errWarpDeg.max, 0, 1e-9);  // below onset → fully compensated
+});
+
+// ===========================================================================
+section('adaptive guard band (replay/adaptive-guard.js) — Option C');
+
+test('guardForSpeed inverts the margin equation Δmax(g) = ω·A·safety', () => {
+  // Pick a speed whose answer lands strictly between gMin and gMax so the
+  // clipping doesn't mask the algebra.
+  const omega = 100; // deg/s
+  const g = guardForSpeed(omega, DEFAULT_CONFIG);
+  assert.ok(g > ADAPTIVE_DEFAULTS.gMin && g < ADAPTIVE_DEFAULTS.gMax);
+  const ageSec = (80 + 1000 / 30 + 1000 / 60) / 1000;
+  const needRad = (omega * Math.PI / 180) * ageSec * ADAPTIVE_DEFAULTS.safety;
+  approx(maxWarpRad({ ...DEFAULT_CONFIG, guard: g }).yaw, needRad, 1e-9);
+});
+
+test('calm input: adaptive renders fewer pixels than fixed 0.12, still clamp-free', () => {
+  const calm = synthSineSweep({ amplitudeDeg: 10, freqHz: 0.2, durationMs: 8000 });
+  const fixed = simulate(calm, { guard: 0.12 }).summary;
+  const adaptive = simulate(calm, { guardPolicy: makeAdaptiveGuardPolicy() }).summary;
+  assert.equal(fixed.clampRate, 0);
+  assert.equal(adaptive.clampRate, 0);
+  assert.ok(adaptive.pixelCost.mean < fixed.pixelCost.mean * 0.7,
+    `adaptive ${adaptive.pixelCost.mean.toFixed(3)} should undercut fixed ` +
+    `${fixed.pixelCost.mean.toFixed(3)} by >30%`);
+});
+
+test('hot input: fixed 0.12 clamps, adaptive grows past it and does not', () => {
+  const hot = synthWander({ seed: 2, intensity: 2, durationMs: 8000 });
+  const fixed = simulate(hot, { guard: 0.12 }).summary;
+  const adaptive = simulate(hot, { guardPolicy: makeAdaptiveGuardPolicy() }).summary;
+  assert.ok(fixed.clampRate > 0, 'the hot trace should exhaust a fixed 12% margin');
+  assert.equal(adaptive.clampRate, 0, 'adaptive should absorb the same motion');
+  assert.ok(adaptive.guard.max > 0.12, 'it does so by exceeding the fixed margin');
 });
 
 // ===========================================================================

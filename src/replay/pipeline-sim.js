@@ -99,14 +99,24 @@ export function simulate(trace, config = {}) {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
   const fovX = displayFovX(cfg);
-  const maxWarp = maxWarpRad(cfg);
   const lag = new LagSim(cfg.renderHz, cfg.lagMs);
 
   const dt = 1000 / cfg.displayHz;
   const durationMs = traceDurationMs(trace);
 
-  // Rendered-frame state, exactly as main.js keeps it on warpTarget.
-  let rendered = { yaw: 0, pitch: 0, t: 0 };
+  // Rendered-frame state, exactly as main.js keeps it on warpTarget — plus the
+  // guard band the frame was rendered with. With a fixed guard that is just
+  // cfg.guard every frame; a guardPolicy (adaptive-guard.js) may pick a new
+  // value per RENDER tick — a server-side decision, which is why it can only
+  // change when a frame is rendered, never at composite time. The client
+  // learns each frame's guard the same way it learns its pose (the packet the
+  // warp already needs), so per-frame guard is deployable, not a sim fiction.
+  let rendered = { yaw: 0, pitch: 0, t: 0, guard: cfg.guard };
+
+  // Angular speed history (deg/s per display tick) — the observable a real
+  // server has (the input stream it receives). Policies read a recent window.
+  const speeds = [];
+  let prevPose = poseAt(trace, 0);
 
   const ticks = [];
   for (let i = 0; i * dt <= durationMs; i++) {
@@ -116,13 +126,24 @@ export function simulate(trace, config = {}) {
     const truePose = poseAt(trace, now);
     lag.record(now, truePose);
 
+    const speedDegPerSec = Math.hypot(truePose.yaw - prevPose.yaw, truePose.pitch - prevPose.pitch)
+      / RAD / (dt / 1000);
+    prevPose = truePose;
+    speeds.push({ t: now, v: speedDegPerSec });
+    while (speeds.length && speeds[0].t < now - 1000) speeds.shift(); // keep ≤1 s
+
     // SLOW CLOCK: maybe render a new (deliberately stale) frame.
     if (lag.shouldRender(now)) {
       const o = lag.orientationToRender(now);
-      rendered = { yaw: o.yaw, pitch: o.pitch, t: o.t !== undefined ? o.t : now };
+      const guard = cfg.guardPolicy
+        ? cfg.guardPolicy({ now, speeds, config: cfg })
+        : cfg.guard;
+      rendered = { yaw: o.yaw, pitch: o.pitch, t: o.t !== undefined ? o.t : now, guard };
     }
 
     // COMPOSITE: how far has the camera moved since the displayed frame?
+    // The clamp limit belongs to the DISPLAYED frame's guard band.
+    const maxWarp = maxWarpRad({ ...cfg, guard: rendered.guard });
     const dYaw = truePose.yaw - rendered.yaw;
     const dPitch = truePose.pitch - rendered.pitch;
 
@@ -139,11 +160,17 @@ export function simulate(trace, config = {}) {
     // unclamped so post-onset overshoot is visible in the data.
     const guardUsed = Math.max(Math.abs(dYaw) / maxWarp.yaw, Math.abs(dPitch) / maxWarp.pitch);
 
+    // GPU cost of the guard band: the render target is the display buffer
+    // divided by uScale per axis (main.js resize()), so pixels ∝ 1/uScale².
+    const uScale = 1 - 2 * rendered.guard;
+    const pixelCost = 1 / (uScale * uScale);
+
     ticks.push({
       t: now,
       trueYaw: truePose.yaw, truePitch: truePose.pitch,
       stalenessMs: now - rendered.t,   // age of the displayed frame's input
       errNoWarpDeg, errWarpDeg, guardUsed,
+      guard: rendered.guard, pixelCost,
       clamped: clamped ? 1 : 0,
     });
   }
@@ -164,6 +191,8 @@ export function simulate(trace, config = {}) {
     errWarpDeg: stats(of((k) => k.errWarpDeg)),
     stalenessMs: stats(of((k) => k.stalenessMs)),
     guardUsed: stats(of((k) => k.guardUsed)),
+    guard: stats(of((k) => k.guard)),
+    pixelCost: stats(of((k) => k.pixelCost)), // 1.0 = no guard band
   };
 
   return { config: cfg, fovXRad: fovX, ticks, summary };
@@ -171,11 +200,11 @@ export function simulate(trace, config = {}) {
 
 /** Serialise a simulate() result as CSV (per-tick rows + a # summary block). */
 export function resultToCSV(result) {
-  const header = 'time_ms,true_yaw_deg,true_pitch_deg,staleness_ms,err_nowarp_deg,err_warp_deg,guard_used,clamped';
+  const header = 'time_ms,true_yaw_deg,true_pitch_deg,staleness_ms,err_nowarp_deg,err_warp_deg,guard_used,guard,pixel_cost,clamped';
   const rows = result.ticks.map((k) =>
     [k.t.toFixed(3), (k.trueYaw / RAD).toFixed(4), (k.truePitch / RAD).toFixed(4),
      k.stalenessMs.toFixed(3), k.errNoWarpDeg.toFixed(4), k.errWarpDeg.toFixed(4),
-     k.guardUsed.toFixed(4), k.clamped].join(','));
+     k.guardUsed.toFixed(4), k.guard.toFixed(4), k.pixelCost.toFixed(4), k.clamped].join(','));
   const s = result.summary;
   const fmt = (o) => `${o.mean.toFixed(4)}/${o.p95.toFixed(4)}/${o.max.toFixed(4)}`;
   const lines = [
@@ -188,6 +217,8 @@ export function resultToCSV(result) {
     `# err_warp_deg(mean/p95/max),${fmt(s.errWarpDeg)}`,
     `# staleness_ms(mean/p95/max),${fmt(s.stalenessMs)}`,
     `# guard_used(mean/p95/max),${fmt(s.guardUsed)}`,
+    `# guard(mean/p95/max),${fmt(s.guard)}`,
+    `# pixel_cost(mean/p95/max),${fmt(s.pixelCost)}`,
   ];
   return [header, ...rows, ...lines].join('\n') + '\n';
 }
