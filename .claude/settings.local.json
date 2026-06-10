@@ -33,7 +33,11 @@
       "WebFetch(domain:arxiv.org)",
       "PowerShell(node bench/run.js --synth wander --seed 7 --duration 5000 --out bench/out/a.csv; node bench/run.js --synth wander --seed 7 --duration 5000 --out bench/out/b.csv; if \\(\\(Get-FileHash bench/out/a.csv\\).Hash -eq \\(Get-FileHash bench/out/b.csv\\).Hash\\) { 'IDENTICAL across runs' } else { 'MISMATCH' }; node bench/run.js --sweep-velocity 100:240:10 | Select-Object -Last 6)",
       "WebFetch(domain:dl.acm.org)",
-      "Bash(gh --version)"
+      "Bash(gh --version)",
+      "PowerShell($cred = \"protocol=https`nhost=github.com`n\" | git credential fill; $token = \\($cred | Where-Object { $_ -match '^password=' }\\) -replace '^password=',''; if \\($token\\) { $headers = @{ Authorization = \"Bearer $token\"; Accept = 'application/vnd.github+json' }; $existing = Invoke-RestMethod -Uri 'https://api.github.com/repos/Turbo-Soggy/Reflex2WebFrameWarp/pulls?head=Turbo-Soggy:cloud-stream&state=open' -Headers $headers; if \\($existing.Count -gt 0\\) { \"EXISTING: $\\($existing[0].html_url\\)\" } else { 'no existing PR; token OK' } } else { 'no token from credential helper' })",
+      "Bash(git credential *)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\('html_url'\\) or json.dumps\\(d\\)[:800]\\)\")",
+      "PowerShell(npm --prefix site install)"
     ]
   }
 }
