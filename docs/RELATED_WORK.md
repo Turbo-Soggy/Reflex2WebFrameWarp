@@ -100,6 +100,15 @@ Siekkinen/Kämäräinen group behind the imperceptible-latency measurement study
 [kamarainen2017imperceptible] — the measurement people moved to
 representation; nobody took the commodity-video warp path.)
 
+Whether rotation-compensated reprojection of commodity video streams can
+achieve perceptually imperceptible latency — without the bandwidth and
+server-modification requirements of representation-level approaches — remains
+an open empirical question. That is the question this project's instruments
+are built to answer: the measured floor exists (one display interval,
+jitter-immune, THEORY.md §2), the perceptual threshold side
+[kamarainen2017imperceptible] exists, and the Phase 4 user study is the
+missing piece that joins them.
+
 ## Citation count
 
 28 entries in `references.bib` (target was 25–30): 3 IBR ancestry, 5 VR
