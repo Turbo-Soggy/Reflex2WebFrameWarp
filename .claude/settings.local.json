@@ -28,7 +28,12 @@
       "Bash(git commit -m 'Stage C4: network simulation — delay buffer, input delay, jitter switch *)",
       "Bash(git commit -m 'Stage C5: measurement, live chart, CSV export with per-mode stats *)",
       "Bash(git commit -m 'Stage C6: README — cloud demo docs, study order, demo script, honest tables *)",
-      "Bash(git commit -m 'Update local settings allowlist \\(session permission entries\\) *)"
+      "Bash(git commit -m 'Update local settings allowlist \\(session permission entries\\) *)",
+      "WebSearch",
+      "WebFetch(domain:arxiv.org)",
+      "PowerShell(node bench/run.js --synth wander --seed 7 --duration 5000 --out bench/out/a.csv; node bench/run.js --synth wander --seed 7 --duration 5000 --out bench/out/b.csv; if \\(\\(Get-FileHash bench/out/a.csv\\).Hash -eq \\(Get-FileHash bench/out/b.csv\\).Hash\\) { 'IDENTICAL across runs' } else { 'MISMATCH' }; node bench/run.js --sweep-velocity 100:240:10 | Select-Object -Last 6)",
+      "WebFetch(domain:dl.acm.org)",
+      "Bash(gh --version)"
     ]
   }
 }
