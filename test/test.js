@@ -19,6 +19,8 @@ import * as THREE from 'three';
 import { renderFovDeg } from '../src/projection.js';
 import { LagSim } from '../src/lag.js';
 import { shoot } from '../src/raycast.js';
+import { TAG, idToBits, bitsToId, cellRect } from '../src/cloud/frame-tag.js';
+import { PoseSync } from '../src/cloud/pose-sync.js';
 
 // --- tiny green/red harness ------------------------------------------------
 let passed = 0, failed = 0;
@@ -161,6 +163,94 @@ test('picks the nearer of two discs along the ray', () => {
   const near = makeDisc(0, 0, -3);
   const far = makeDisc(0, 0, -8);
   assert.equal(shoot(origin, 0, 0, [far, near]), near);
+});
+
+// ===========================================================================
+section('frame tag codec (cloud/frame-tag.js)');
+
+test('idToBits / bitsToId round-trip', () => {
+  for (const id of [0, 1, 5, 0x00ff, 0xaaaa, 0x5555, 0xffff]) {
+    assert.equal(bitsToId(idToBits(id)), id);
+  }
+});
+
+test('ids wrap at 16 bits (frame 65541 encodes as frame 5)', () => {
+  assert.equal(bitsToId(idToBits(65536 + 5)), 5);
+});
+
+test('cells tile the tag region without overlap', () => {
+  const seen = new Set();
+  for (let i = 0; i < TAG.bits; i++) {
+    const r = cellRect(i);
+    assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= TAG.px && r.y + r.h <= TAG.px,
+      `cell ${i} escapes the ${TAG.px}px region`);
+    const key = `${r.x},${r.y}`;
+    assert.ok(!seen.has(key), `cells ${i} overlaps another at ${key}`);
+    seen.add(key);
+  }
+  assert.equal(seen.size, TAG.bits); // 16 distinct cells
+});
+
+// ===========================================================================
+section('PoseSync — pose ↔ frame matching (cloud/pose-sync.js)');
+
+// Simulated stream: server clock starts at 1000, client clock runs 500 ms
+// ahead, packets arrive with small non-negative transit jitter.
+function fillPoseSync() {
+  const ps = new PoseSync(60);
+  const jitter = [3, 1, 0, 4, 2, 5, 1, 0, 3, 2]; // one packet has zero transit
+  for (let i = 0; i < 10; i++) {
+    const t = 1000 + i * 33.3;                       // server clock
+    ps.record({ frameId: 100 + i, yaw: i * 0.1, pitch: 0, t },
+      t + 500 + jitter[i]);                          // client clock = t + 500 (+transit)
+  }
+  return ps;
+}
+
+test('clock offset converges on the true value via the min-filter', () => {
+  const ps = fillPoseSync();
+  approx(ps.offsetMs, 500, 1e-9); // exact when one packet had zero transit
+});
+
+test('byFrameId is an exact lookup (including 16-bit-masked ids)', () => {
+  const ps = fillPoseSync();
+  assert.equal(ps.byFrameId(103).frameId, 103);
+  assert.equal(ps.byFrameId(103 + 65536).frameId, 103); // wrapped query
+  assert.equal(ps.byFrameId(999), null);
+});
+
+test('byCaptureTime resolves the nearest pose in server time', () => {
+  const ps = fillPoseSync();
+  // A frame captured (client clock) at server-time 1000+5*33.3 → pose 105.
+  const capture = 1000 + 5 * 33.3 + 500;
+  const { pose, errMs } = ps.byCaptureTime(capture);
+  assert.equal(pose.frameId, 105);
+  approx(errMs, 0, 1e-9);
+  // 10 ms off is still nearest to the same frame (spacing is 33.3 ms).
+  assert.equal(ps.byCaptureTime(capture + 10).pose.frameId, 105);
+});
+
+test('byCaptureTime returns null before any pose has arrived', () => {
+  assert.equal(new PoseSync().byCaptureTime(123), null);
+});
+
+test('byReceiveTime picks the newest pose that beat the video frame', () => {
+  const ps = fillPoseSync();
+  // Pose 105 arrived (client clock) at 1000 + 5*33.3 + 500 + 5 = 1671.5; its
+  // video frame lands 8 ms later — before pose 106's arrival at 1700.8.
+  const { pose, leadMs } = ps.byReceiveTime(1671.5 + 8);
+  assert.equal(pose.frameId, 105);
+  approx(leadMs, 8, 1e-9);
+  // A receive time before the first pose ever arrived → null.
+  assert.equal(ps.byReceiveTime(100), null);
+});
+
+test('capacity: the buffer keeps only the newest N poses', () => {
+  const ps = new PoseSync(5);
+  for (let i = 0; i < 12; i++) ps.record({ frameId: i, yaw: 0, pitch: 0, t: i * 33.3 }, i * 33.3);
+  assert.equal(ps.size, 5);
+  assert.equal(ps.byFrameId(0), null);            // evicted
+  assert.equal(ps.byFrameId(11).frameId, 11);     // newest survives
 });
 
 // ===========================================================================

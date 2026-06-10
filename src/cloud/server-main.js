@@ -24,11 +24,12 @@ import { createScene } from '../scene.js';
 import { Targets } from '../targets.js';
 import { renderFovDeg } from '../projection.js';
 import { postSignal, clearSignal, waitForSignal, waitForIceComplete } from './signaling.js';
+import { CAPTURE, TAG, idToBits, cellRect } from './frame-tag.js';
 
-// --- Fixed capture geometry (see header) ------------------------------------
-const CAPTURE_W = 1280;
-const CAPTURE_H = 720;
-const SOURCE_FPS = 30;
+// --- Fixed capture geometry (shared protocol constants, see frame-tag.js) ---
+const CAPTURE_W = CAPTURE.width;
+const CAPTURE_H = CAPTURE.height;
+const SOURCE_FPS = CAPTURE.fps;
 
 // Same guard-band maths as the local demo: render WIDER than the player will
 // see, so the C3 warp has real pixels to pull from. The client crops back.
@@ -65,9 +66,27 @@ camera.position.set(0, 1.7, 0);
 // only redraw when the 33.3ms deadline passes, so the long-run average is 30.
 const RENDER_INTERVAL = 1000 / SOURCE_FPS;
 let nextRenderDue = 0;
-let framesRendered = 0;
+let frameId = 0; // monotonic — the join key between video frames and poses
 const clock = new THREE.Clock();
 const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+
+// Stage C2: stamp the frame's id into its top-left corner as a 4×4 grid of
+// black/white cells (see frame-tag.js for the why). Drawn with scissored
+// clears — a clear bypasses tone mapping entirely, so "white" really encodes
+// as 255 and "black" as 0, giving the client an easy threshold. The corner is
+// inside the guard band, so the C3 crop hides it from the player.
+function drawFrameTag(id) {
+  const bits = idToBits(id);
+  renderer.setScissorTest(true);
+  for (let i = 0; i < TAG.bits; i++) {
+    const r = cellRect(i); // top-left-origin rect → flip y for WebGL scissor
+    renderer.setScissor(r.x, CAPTURE_H - r.y - r.h, r.w, r.h);
+    renderer.setClearColor(bits[i] ? 0xffffff : 0x000000, 1);
+    renderer.clear(true, false, false); // color only
+  }
+  renderer.setScissorTest(false);
+  // No clear-color restore needed: the scene clears from scene.background.
+}
 
 function frame() {
   requestAnimationFrame(frame);
@@ -86,12 +105,21 @@ function frame() {
   targets.update(t);
   renderer.render(world.scene, camera);
 
-  framesRendered++;
-  if (framesRendered % SOURCE_FPS === 0) {
-    setStat('stat-render', `${framesRendered} frames @ ${SOURCE_FPS} FPS`);
+  // Stage C2: tag the pixels and ship the matching pose over the DataChannel.
+  // Same id in both → the client can verify the match against the pixels.
+  frameId++;
+  drawFrameTag(frameId);
+  if (dc.readyState === 'open') {
+    dc.send(JSON.stringify({ type: 'pose', frameId, yaw, pitch, t: now }));
+    if (frameId % SOURCE_FPS === 0) {
+      setStat('stat-pose', `frame ${frameId} · yaw ${(yaw * 180 / Math.PI).toFixed(1)}°`, true);
+    }
+  }
+
+  if (frameId % SOURCE_FPS === 0) {
+    setStat('stat-render', `${frameId} frames @ ${SOURCE_FPS} FPS`);
   }
 }
-frame();
 
 // --- Capture the canvas as a media stream --------------------------------------
 const stream = canvas.captureStream(SOURCE_FPS);
@@ -126,6 +154,9 @@ const sender = pc.addTrack(videoTrack, stream);
 // control channel: a lost packet must be skipped, not retransmitted late —
 // by the time it arrived, a newer one would already supersede it.
 const dc = pc.createDataChannel('meta', { ordered: false, maxRetransmits: 0 });
+
+// Start the render loop only now that `dc` exists (the loop posts poses on it).
+frame();
 
 pc.addEventListener('iceconnectionstatechange', () => {
   setStat('stat-ice', pc.iceConnectionState,

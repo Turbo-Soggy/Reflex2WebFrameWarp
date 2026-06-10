@@ -19,7 +19,11 @@
       "Bash(node --input-type=module -e \"import\\('./vendor/three/three.module.js'\\).then\\(m=>{const T=m; const v=new T.Vector3\\(1,2,3\\); console.log\\('THREE OK, Vector3 length:', v.length\\(\\).toFixed\\(4\\), 'Raycaster?', typeof T.Raycaster, 'Mesh?', typeof T.Mesh, 'CircleGeometry?', typeof T.CircleGeometry\\);}\\).catch\\(e=>console.log\\('THREE IMPORT FAILED:', e.message\\)\\);\")",
       "Bash(npm install *)",
       "Bash(node --input-type=module -e \"import\\('three'\\).then\\(m=>console.log\\('bare three resolves in Node:', typeof m.Raycaster\\)\\).catch\\(e=>console.log\\('FAIL',e.message\\)\\)\")",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(git checkout *)",
+      "PowerShell(npm test)",
+      "Bash(git commit -m 'Stage C1: WebRTC plumbing — server/client pages, localStorage signaling, echo test *)",
+      "Bash(git commit -m 'Stage C2: pose metadata sync — frameId pixel tag + pose ring buffer *)"
     ]
   }
 }
