@@ -50,6 +50,7 @@ the mouse to look around.
 | `D` | Toggle demo mode (hide tech readouts, big scores) |
 | `R` | Start / stop recording latency samples |
 | `E` | Export the recorded samples as a CSV |
+| `T` | Record an input trace; stop downloads JSON for `bench/run.js` (replay system) |
 
 The **parameter panel** (top-right) has live sliders for injected lag, source
 frame rate, and guard-band width — press `Esc` to release the mouse, adjust, then
@@ -286,4 +287,10 @@ vectors) — that's the documented limitation and the motivation for future work
 - [x] **Shooter** — Indoor range, laterally-moving targets, honest camera-orientation hit detection, slim accuracy scoreboard, demo mode (`D`).
 - [x] **Single-screen** — Lag hardcoded always-on; collapsed the split into one fullscreen viewport; `W` toggles Frame Warp; persistent WITHOUT/WITH-warp scoreboard.
 - [x] **Cloud streaming** (`cloud-stream` branch) — the pipeline split across WebRTC: server/player windows, pixel-tag pose sync, simulated delay + jitter, end-to-end measurement + CSV. Stages C1–C5 of the cloud plan; see the section above.
+- [x] **Research program, machine-executable subset** (`cloud-stream` branch) — Phases 0–3 of `RESEARCH_ROADMAP.md`, status tracked honestly in `FRAME_WARP_TASKLIST.md`:
+  - *Phase 0*: landscape baseline memo + revised novelty claim (`docs/PHASE0_WHAT_CHANGED.md`).
+  - *Phase 1*: deterministic replay system (`src/replay/`, `T` key records traces) + headless benchmark (`bench/run.js`) — bit-identical across runs. Hardware rig + IRB blocked (need a desk with hardware and a university).
+  - *Phase 2*: theory layer (`docs/THEORY.md` — decomposition, jitter-immunity theorem, error bounds, all validated by the instrument) + related-work survey (`docs/RELATED_WORK.md`, 28-entry `docs/references.bib`).
+  - *Phase 3, Option C*: velocity-adaptive guard band (`src/replay/adaptive-guard.js`, `bench/adaptive.js`, results in `docs/ADAPTIVE_GUARD.md`) — calm input cuts the guard pixel tax +73% → +9%; hot input eliminates clamping. Simulation-level; encoder effects unmeasured.
+  - *Phases 4–5* (user study, paper) blocked on humans + ethics approval, by design.
 - [ ] **Stage 4** — Report (DOCX) + slides (PPTX).
