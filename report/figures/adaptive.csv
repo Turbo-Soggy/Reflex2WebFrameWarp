@@ -1,0 +1,7 @@
+trace,policy,pixel_cost,clamp_rate
+calm,fixed-0.12,1.7313,0.000000
+calm,adaptive,1.3306,0.000000
+moderate,fixed-0.12,1.7313,0.007005
+moderate,adaptive,1.9242,0.000000
+hot,fixed-0.12,1.7313,0.085814
+hot,adaptive,2.4665,0.000000
