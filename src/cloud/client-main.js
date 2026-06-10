@@ -25,9 +25,12 @@ import * as THREE from 'three';
 import { QuadRenderer } from '../quad-render.js';
 import { Input } from '../input.js';
 import { renderFovDeg } from '../projection.js';
+import { Latency } from '../latency.js';
+import { LatencyChart } from '../chart.js';
 import { postSignal, waitForSignal, waitForIceComplete } from './signaling.js';
 import { CAPTURE, TAG, bitsToId, cellRect } from './frame-tag.js';
 import { PoseSync } from './pose-sync.js';
+import { CloudRecorder } from './cloud-recorder.js';
 
 // Must match the server's guard-band geometry (it renders the wider FOV;
 // we crop back to the display FOV — the split-across-the-network guard band).
@@ -76,6 +79,30 @@ const noMv = { texture: zeroVelocity, dtSeconds: 0, enabled: false };
 const input = new Input(canvas);
 canvas.addEventListener('click', () => input.lock());
 
+// --- Stage C5: measurement -----------------------------------------------------
+// The local demo's instruments, unchanged — only the meaning of "the input
+// this frame reflects" is new. Each forwarded input's SEND time is remembered
+// here; the server echoes back which seq each frame's camera used (in the
+// pose packet); so the displayed frame's e2e latency = now − sentAt(seq) —
+// the full uplink + render-wait + downlink + codec loop, measured entirely in
+// this page's clock.
+const latency = new Latency();
+let latencyPrimed = false; // don't chart until the first real round trip
+const inputSentAt = new Map(); // seq → performance.now() at send
+function rememberInputSent(seq, now) {
+  inputSentAt.set(seq, now);
+  if (inputSentAt.size > 2400) { // ~20s at 120 Hz; Map iterates in insert order
+    inputSentAt.delete(inputSentAt.keys().next().value);
+  }
+}
+
+// e2e reaches 2×delay + codec — scale the chart for the 200 ms slider limit.
+const chart = new LatencyChart(document.getElementById('latency-chart'), { maxMs: 500 });
+const recorder = new CloudRecorder();
+
+// Network conditions as stamped on the most recent pose packet (for the CSV).
+const netNow = { delayMs: 0, jitterOn: false };
+
 let warpEnabled = false;
 let forwardInput = true; // debug hook: freeze the server camera to isolate the warp
 window.addEventListener('keydown', (e) => {
@@ -83,6 +110,11 @@ window.addEventListener('keydown', (e) => {
     warpEnabled = !warpEnabled;
     setStat('stat-warp', warpEnabled ? 'ON — view follows the mouse instantly' : 'OFF — raw delayed stream',
       warpEnabled);
+  } else if (e.code === 'KeyR') {
+    const on = recorder.toggle(performance.now());
+    setStat('stat-rec', on ? 'recording… (R stops)' : `stopped — ${recorder.sampleCount} samples (E exports)`, on);
+  } else if (e.code === 'KeyE') {
+    recorder.download();
   }
 });
 
@@ -96,6 +128,7 @@ const fovX = 2 * Math.atan(Math.tan(fovY / 2) * (CAPTURE.width / CAPTURE.height)
 
 function composite() {
   requestAnimationFrame(composite);
+  const now = performance.now();
   const dYaw = input.yaw - displayedPose.yaw;
   const dPitch = input.pitch - displayedPose.pitch;
   // Same sign/normalisation as main.js: angular motion → display-UV shift.
@@ -103,6 +136,25 @@ function composite() {
   const dv = dPitch / fovY;
   const delta = warpEnabled ? [du, dv] : [0, 0];
   quad.render(renderer, videoTexture, delta, CAPTURE.width, CAPTURE.height, noMv);
+
+  // Stage C5: sample, record, chart — once real round trips are flowing.
+  if (latencyPrimed) {
+    const lat = latency.sample(now, warpEnabled);
+    recorder.capture(now, {
+      warpEnabled,
+      netDelayMs: netNow.delayMs,
+      jitterOn: netNow.jitterOn,
+      noWarpMs: lat.noWarp,
+      warpMs: lat.warp,
+    });
+    chart.draw(now, latency.noWarp, latency.warp);
+    if (recorder.recording) {
+      setStat('stat-rec', `recording… ${recorder.sampleCount} samples (R stops)`, true);
+    }
+    setStat('stat-latency',
+      `no-warp ${latency.smoothNoWarp.toFixed(0)} ms · warp ${latency.smoothWarp.toFixed(0)} ms`,
+      true);
+  }
 }
 composite();
 
@@ -187,6 +239,18 @@ let planAHits = 0;
         displayedPose.pitch = tagPose.pitch;
         displayedPose.frameId = tagPose.frameId;
 
+        // Stage C5: the frame on screen reflects input packet `inputSeq` —
+        // its send time is the timestamp the e2e measurement runs from.
+        const sentAt = inputSentAt.get(tagPose.inputSeq);
+        if (sentAt !== undefined) {
+          latency.markRender(sentAt);
+          latencyPrimed = true;
+        }
+        if (tagPose.delayMs !== undefined) {
+          netNow.delayMs = tagPose.delayMs;
+          netNow.jitterOn = tagPose.jitter === 1;
+        }
+
         const yawDeg = (tagPose.yaw * 180 / Math.PI).toFixed(1);
         const pitchDeg = (tagPose.pitch * 180 / Math.PI).toFixed(1);
         setStat('stat-pose', `frame ${tagId} · yaw ${yawDeg}° · pitch ${pitchDeg}°`, true);
@@ -246,7 +310,9 @@ let planAHits = 0;
       // late packet costs nothing — the next one supersedes it entirely.
       setInterval(() => {
         if (dc.readyState !== 'open' || !forwardInput) return;
+        const now = performance.now();
         dc.send(JSON.stringify({ type: 'input', seq: ++inputSeq, yaw: input.yaw, pitch: input.pitch }));
+        rememberInputSent(inputSeq, now); // Stage C5: e2e clock starts here
       }, 1000 / 120);
     });
 
@@ -283,7 +349,7 @@ let planAHits = 0;
 
 if (DEBUG) {
   window.CloudClient = {
-    input, poseSync, displayedPose, canvas, videoTexture,
+    input, poseSync, displayedPose, canvas, videoTexture, latency, recorder,
     get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
     get forwardInput() { return forwardInput; }, set forwardInput(v) { forwardInput = v; },
   };

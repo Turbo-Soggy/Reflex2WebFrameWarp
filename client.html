@@ -20,7 +20,7 @@
 <body>
   <header>
     <h1><span class="role-client">Player</span></h1>
-    <span class="subtitle">click the view to grab the mouse · <kbd>W</kbd> toggles the warp · <kbd>Esc</kbd> releases</span>
+    <span class="subtitle">click the view to grab the mouse · <kbd>W</kbd> warp · <kbd>R</kbd>/<kbd>E</kbd> record/export · <kbd>Esc</kbd> releases</span>
   </header>
 
   <main>
@@ -50,6 +50,21 @@
     <div class="row"><span class="label">Displayed frame pose (C2)</span><span id="stat-pose">—</span></div>
     <div class="row"><span class="label">Plan A timestamps vs tag</span><span id="stat-plana">—</span></div>
     <div class="row"><span class="label">Warp (C3)</span><span id="stat-warp">OFF — press W (click the view first)</span></div>
+    <div class="row"><span class="label">View latency (C5)</span><span id="stat-latency">measuring…</span></div>
+    <div class="row"><span class="label">Recording</span><span id="stat-rec">press R to record, E to export CSV</span></div>
+  </div>
+
+  <!-- Live latency chart (Stage C5): the same two-line picture as the local
+       demo, but the orange line is now a REAL network round trip — input sent
+       → frame reflecting it displayed. Crank the delay slider on the server
+       and watch orange track it while blue stays flat. -->
+  <div id="chart-panel">
+    <div class="chart-title">View-direction latency (ms, measured)</div>
+    <canvas id="latency-chart" width="280" height="120"></canvas>
+    <div class="chart-legend">
+      <span><i class="swatch" style="background:#ff7a5c"></i>No warp (e2e loop)</span>
+      <span><i class="swatch" style="background:#4cc2ff"></i>Warp</span>
+    </div>
   </div>
 
   <script type="module" src="./src/cloud/client-main.js"></script>

@@ -24,6 +24,7 @@ export class Recorder {
     this.recording = false;
     this.rows = [];
     this._t0 = 0;
+    this.filePrefix = 'framewarp-latency'; // subclasses may rebrand the export
   }
 
   /** Start (clears previous) or stop recording. Returns the new state. */
@@ -69,7 +70,7 @@ export class Recorder {
     const a = document.createElement('a');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     a.href = url;
-    a.download = `framewarp-latency-${stamp}.csv`;
+    a.download = `${this.filePrefix}-${stamp}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();

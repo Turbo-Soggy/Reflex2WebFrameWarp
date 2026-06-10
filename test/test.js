@@ -21,6 +21,7 @@ import { LagSim } from '../src/lag.js';
 import { shoot } from '../src/raycast.js';
 import { TAG, idToBits, bitsToId, cellRect } from '../src/cloud/frame-tag.js';
 import { PoseSync } from '../src/cloud/pose-sync.js';
+import { CloudRecorder, percentile } from '../src/cloud/cloud-recorder.js';
 
 // --- tiny green/red harness ------------------------------------------------
 let passed = 0, failed = 0;
@@ -251,6 +252,34 @@ test('capacity: the buffer keeps only the newest N poses', () => {
   assert.equal(ps.size, 5);
   assert.equal(ps.byFrameId(0), null);            // evicted
   assert.equal(ps.byFrameId(11).frameId, 11);     // newest survives
+});
+
+// ===========================================================================
+section('CloudRecorder — percentiles + per-mode CSV summary (cloud/cloud-recorder.js)');
+
+test('percentile uses the nearest-rank method', () => {
+  const v = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  approx(percentile(v, 50), 50);   // ceil(0.5·10) = 5th value
+  approx(percentile(v, 95), 100);  // ceil(0.95·10) = 10th value
+  approx(percentile(v, 99), 100);
+  approx(percentile([42], 95), 42);
+  assert.ok(Number.isNaN(percentile([], 95)));
+});
+
+test('CSV summary reports perceived latency per warp mode', () => {
+  const rec = new CloudRecorder();
+  rec.toggle(0);
+  // 3 warp-off samples (e2e 100/200/300) + 2 warp-on samples (view 5/15).
+  rec.capture(10, { warpEnabled: false, netDelayMs: 40, jitterOn: false, noWarpMs: 100, warpMs: 100 });
+  rec.capture(20, { warpEnabled: false, netDelayMs: 40, jitterOn: false, noWarpMs: 200, warpMs: 200 });
+  rec.capture(30, { warpEnabled: false, netDelayMs: 40, jitterOn: false, noWarpMs: 300, warpMs: 300 });
+  rec.capture(40, { warpEnabled: true, netDelayMs: 40, jitterOn: true, noWarpMs: 250, warpMs: 5 });
+  rec.capture(50, { warpEnabled: true, netDelayMs: 40, jitterOn: true, noWarpMs: 250, warpMs: 15 });
+  const csv = rec.toCSV();
+  assert.ok(csv.startsWith('time_ms,warp_enabled,net_delay_ms,jitter_on,e2e_no_warp_ms,warp_view_ms'));
+  assert.ok(csv.includes('# warp_off,3,200.00,300.00,300.00'), 'warp-off summary row');
+  assert.ok(csv.includes('# warp_on,2,10.00,15.00,15.00'), 'warp-on summary row');
+  assert.equal(rec.sampleCount, 5);
 });
 
 // ===========================================================================

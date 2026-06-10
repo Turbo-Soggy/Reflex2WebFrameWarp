@@ -123,7 +123,7 @@ function frame() {
   // coherent, all genuinely `delayMs` old by the time the player sees them.
   frameId++;
   drawFrameTag(frameId);
-  enqueueFrame(now, frameId, yaw, pitch);
+  enqueueFrame(now, frameId, yaw, pitch, remoteInput.seq);
 
   if (frameId % SOURCE_FPS === 0) {
     setStat('stat-render', `${frameId} frames @ ${SOURCE_FPS} FPS`);
@@ -163,7 +163,7 @@ const framePool = [];
 const pendingFrames = []; // { cnv, frameId, yaw, pitch, due } — due ascending
 let lastFrameDue = 0;
 
-function enqueueFrame(now, id, yaw, pitch) {
+function enqueueFrame(now, id, yaw, pitch, inputSeq) {
   const cnv = framePool.pop() || (() => {
     const c = document.createElement('canvas');
     c.width = CAPTURE_W; c.height = CAPTURE_H;
@@ -175,7 +175,7 @@ function enqueueFrame(now, id, yaw, pitch) {
   // RTP stream in order) — clamp each due time to after the previous one.
   const due = Math.max(now + effectiveDelay(now), lastFrameDue + 1);
   lastFrameDue = due;
-  pendingFrames.push({ cnv, frameId: id, yaw, pitch, due });
+  pendingFrames.push({ cnv, frameId: id, yaw, pitch, inputSeq, due });
 }
 
 // Input queue: the player's packets also cross the simulated network.
@@ -189,7 +189,13 @@ function releaseDue(now) {
     captureCtx.drawImage(f.cnv, 0, 0);
     framePool.push(f.cnv);
     if (dc.readyState === 'open') {
-      dc.send(JSON.stringify({ type: 'pose', frameId: f.frameId, yaw: f.yaw, pitch: f.pitch, t: now }));
+      // inputSeq: which input packet this frame's camera reflected — the join
+      // key for the client's end-to-end latency measurement (Stage C5). The
+      // current network knobs ride along so the client can label its CSV.
+      dc.send(JSON.stringify({
+        type: 'pose', frameId: f.frameId, yaw: f.yaw, pitch: f.pitch, t: now,
+        inputSeq: f.inputSeq, delayMs, jitter: jitterOn ? 1 : 0,
+      }));
     }
   }
   while (pendingInputs.length > 0 && pendingInputs[0].due <= now) {

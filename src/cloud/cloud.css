@@ -90,6 +90,38 @@ main canvas, main video {
   color: var(--muted);
 }
 
+/* Live latency chart (client page, Stage C5) — styled like the local demo's. */
+#chart-panel {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: 5;
+  background: var(--panel);
+  border: 1px solid #1d2430;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+#chart-panel .chart-title {
+  font: 11px var(--mono);
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+#chart-panel .chart-legend {
+  display: flex;
+  gap: 12px;
+  font: 11px var(--mono);
+  color: var(--muted);
+  margin-top: 4px;
+}
+#chart-panel .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
 kbd {
   font: 12px var(--mono);
   border: 1px solid var(--muted);
