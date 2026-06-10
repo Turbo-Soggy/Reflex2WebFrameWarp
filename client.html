@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frame Warp — PLAYER</title>
+  <link rel="stylesheet" href="./src/cloud/cloud.css" />
+</head>
+<body>
+  <header>
+    <h1><span class="role-client">Player</span></h1>
+    <span class="subtitle">receives the stream — in Stage C3 this window warps it with local input</span>
+  </header>
+
+  <main>
+    <!-- The received stream. muted+autoplay so playback starts without a user
+         gesture; playsinline so mobile Safari (if ever) doesn't go fullscreen.
+         In Stage C3 this element becomes a THREE.VideoTexture. -->
+    <video id="stream" autoplay playsinline muted></video>
+  </main>
+
+  <!-- Plumbing health, one row per stage of the C1 checklist. -->
+  <div id="status">
+    <div class="row"><span class="label">Signaling</span><span id="stat-signal">—</span></div>
+    <div class="row"><span class="label">ICE</span><span id="stat-ice">new</span></div>
+    <div class="row"><span class="label">Video track</span><span id="stat-video">—</span></div>
+    <div class="row"><span class="label">Decoded frames</span><span id="stat-frames">—</span></div>
+    <div class="row"><span class="label">DataChannel</span><span id="stat-dc">waiting for server…</span></div>
+    <div class="row"><span class="label">Echo (client→server→client)</span><span id="stat-echo">—</span></div>
+  </div>
+
+  <script type="module" src="./src/cloud/client-main.js"></script>
+</body>
+</html>

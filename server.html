@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frame Warp — CLOUD SERVER</title>
+
+  <!-- Same vendored Three.js as the local demo (works offline, can't break
+       mid-defense if the network drops). -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js"
+    }
+  }
+  </script>
+
+  <link rel="stylesheet" href="./src/cloud/cloud.css" />
+</head>
+<body>
+  <header>
+    <h1><span class="role-server">Cloud Server</span></h1>
+    <span class="subtitle">renders the game at 30 FPS and streams it over WebRTC</span>
+    <button id="open-client">Open player window →</button>
+  </header>
+
+  <main>
+    <!-- STATIC CAPTURE RESOLUTION: the canvas is a fixed 1280×720 and is only
+         ever scaled by CSS. The WebRTC capture reads the attribute size, so
+         the encoder never adaptively rescales (which would silently break the
+         client's UV math in Stage C3). -->
+    <canvas id="server-view" width="1280" height="720"></canvas>
+  </main>
+
+  <!-- Plumbing health, one row per stage of the C1 checklist. -->
+  <div id="status">
+    <div class="row"><span class="label">Render loop</span><span id="stat-render">starting…</span></div>
+    <div class="row"><span class="label">Capture</span><span id="stat-capture">—</span></div>
+    <div class="row"><span class="label">Signaling</span><span id="stat-signal">—</span></div>
+    <div class="row"><span class="label">ICE</span><span id="stat-ice">new</span></div>
+    <div class="row"><span class="label">DataChannel</span><span id="stat-dc">connecting…</span></div>
+    <div class="row"><span class="label">Echo (server→client→server)</span><span id="stat-echo">—</span></div>
+  </div>
+
+  <script type="module" src="./src/cloud/server-main.js"></script>
+</body>
+</html>

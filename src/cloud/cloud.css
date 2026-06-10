@@ -1,0 +1,89 @@
+/* ---------------------------------------------------------------------------
+   cloud.css — shared styling for the two cloud-streaming pages
+   (server.html = "CLOUD SERVER", client.html = "PLAYER")
+   Same palette as the local demo's style.css; pure presentation.
+--------------------------------------------------------------------------- */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0a0c10;
+  --fg: #e7ecf3;
+  --muted: #8b97a7;
+  --accent: #4cc2ff;
+  --warn: #ff7a5c;
+  --ok: #58d68d;
+  --panel: rgba(14, 18, 26, 0.72);
+  --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+/* Big judge-facing role banner. */
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 12px 18px;
+}
+header h1 {
+  font-size: 18px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+header h1 .role-server { color: var(--warn); }
+header h1 .role-client { color: var(--accent); }
+header .subtitle { color: var(--muted); font-size: 13px; }
+header button {
+  margin-left: auto;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: 13px var(--mono);
+  cursor: pointer;
+}
+header button:hover { border-color: var(--accent); }
+
+/* The video / canvas area: fixed 16:9 content, scaled to fit with CSS only.
+   (The CANVAS stays 1280×720 internally — capture resolution never changes.) */
+main {
+  display: flex;
+  justify-content: center;
+  padding: 0 18px;
+}
+main canvas, main video {
+  width: min(100%, calc((100vh - 180px) * 16 / 9));
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border: 1px solid #1d2430;
+  border-radius: 8px;
+}
+
+/* Status panel: one row per plumbing stage, coloured by health. */
+#status {
+  margin: 14px auto 0;
+  max-width: 720px;
+  background: var(--panel);
+  border: 1px solid #1d2430;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font: 13px var(--mono);
+}
+#status .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 0;
+}
+#status .label { color: var(--muted); }
+#status span.ok { color: var(--ok); }
+#status span.bad { color: var(--warn); }
