@@ -26,6 +26,10 @@
   <!-- The single fullscreen canvas. -->
   <canvas id="view"></canvas>
 
+  <!-- Muzzle flash: a brief full-screen warm pulse on every shot (pure DOM, so
+       it composites on top of the warped canvas and never touches the pipeline). -->
+  <div id="muzzle"></div>
+
   <!-- Heads-up display overlay (FPS, latency, current mode). -->
   <div id="hud">
     <div class="hud-row"><span class="hud-label">Mode</span><span id="hud-mode">Frame Warp: OFF · MV: OFF</span></div>
@@ -46,6 +50,9 @@
   <!-- Persistent play instruction (top-center). -->
   <div id="play-hint">Track the target and shoot while moving</div>
 
+  <!-- "Feel the Lag" ramp status banner (Phase 4). -->
+  <div id="lag-banner"></div>
+
   <!-- Crosshair: pure DOM, drawn ON TOP of the warped canvas so it stays crisp
        and fixed (the "UI masking" idea — UI is composited after the warp). -->
   <div id="crosshair" class="crosshair"></div>
@@ -53,8 +60,15 @@
   <!-- Hit/miss feedback ("hitmarker") flashed at the crosshair. -->
   <div id="feedback" class="feedback"></div>
 
-  <!-- Live latency chart: no-warp (orange) vs warp (blue) over time. -->
+  <!-- Warp-toggle "moment": a full-screen colour pulse + a big mode call-out
+       (blue = ON, red = OFF). Pure DOM, composited above the canvas. -->
+  <div id="warp-pulse"></div>
+  <div id="warp-announce"></div>
+
+  <!-- Live charts: latency (cause) above, rolling hit-rate (effect) below.
+       The ⤢ button (or G) enlarges the panel for report-figure screenshots. -->
   <div id="chart-panel">
+    <button id="chart-expand" title="Expand charts (G)">⤢</button>
     <div class="chart-title">View-direction latency (ms, measured)</div>
     <canvas id="latency-chart" width="280" height="120"></canvas>
     <div class="chart-legend">
@@ -64,6 +78,20 @@
     </div>
     <div class="chart-note">No-warp = measured frame age. Warp = display-frame
       interval (a proxy floor, not hardware motion-to-photon). See README.</div>
+    <div class="chart-title acc-title">Hit rate (rolling, last 12 shots)</div>
+    <canvas id="accuracy-chart" width="280" height="90"></canvas>
+  </div>
+
+  <!-- Live aim-vs-display heat map (toggle with H): green = where you're aiming
+       now, red = what the screen is showing. The gap is the latency; warp ON
+       collapses it to zero. Hidden by default. -->
+  <div id="heatmap">
+    <div class="heatmap-title">Aim vs. display</div>
+    <canvas id="heatmap-canvas" width="150" height="150"></canvas>
+    <div class="heatmap-legend">
+      <span><i class="swatch" style="background:#7cffb2"></i>Your aim</span>
+      <span><i class="swatch" style="background:#ff5c6c"></i>On screen</span>
+    </div>
   </div>
 
   <!-- Parameter panel: examiners can change the experiment live. Press Esc to
@@ -84,13 +112,141 @@
     </label>
   </div>
 
+  <!-- Guided onboarding "coach" card (Phase 3): a non-blocking narrator that
+       walks a first-timer through feel-the-lag → press W → the reveal. -->
+  <div id="coach">
+    <div class="coach-title"></div>
+    <div class="coach-body"></div>
+  </div>
+  <!-- Giant animated "press W" prompt, shown only at the toggle step. -->
+  <div id="coach-prompt"><kbd>W</kbd></div>
+
+  <!-- Keyboard cheat-sheet (toggle with ?). The full control reference lives
+       here so the start overlay and the scene stay uncluttered. -->
+  <div id="cheatsheet">
+    <div class="cheat-card">
+      <h2>Controls</h2>
+      <ul>
+        <li><kbd>Click</kbd><span>Shoot</span></li>
+        <li><kbd>W</kbd><span>Toggle Frame Warp</span></li>
+        <li><kbd>M</kbd><span>Motion vectors</span></li>
+        <li><kbd>Shift</kbd>+<kbd>M</kbd><span>Slow-mo source</span></li>
+        <li><kbd>L</kbd><span>"Feel the lag" ramp</span></li>
+        <li><kbd>B</kbd><span>A/B test + recorded replay</span></li>
+        <li><kbd>H</kbd><span>Aim-vs-display heat map</span></li>
+        <li><kbd>G</kbd><span>Expand charts</span></li>
+        <li><kbd>D</kbd><span>Demo mode (scores only)</span></li>
+        <li><kbd>X</kbd><span>Mute / unmute</span></li>
+        <li><kbd>R</kbd> / <kbd>E</kbd><span>Record / export CSV</span></li>
+        <li><kbd>T</kbd><span>Record input trace</span></li>
+        <li><kbd>I</kbd><span>About / theory</span></li>
+        <li><kbd>Esc</kbd><span>Release mouse · show summary</span></li>
+        <li><kbd>?</kbd><span>Toggle this panel</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Session summary card (Phase 5): shown when the mouse is released (Esc) if
+       any shots were taken. Click to dive back in. -->
+  <div id="summary"><div class="summary-card"></div></div>
+
+  <!-- A/B test (press B): guidance banner + the recorded split-screen replay.
+       Left = a warp-off shot that looked on-target but missed; right = a warp-on
+       hit. Both rebuilt from the recorded shot geometry — no live split render. -->
+  <div id="ab-banner"></div>
+  <div id="ab-replay">
+    <div class="ab-card">
+      <div class="ab-h">A/B Test — recorded replay</div>
+      <div class="ab-screens">
+        <div class="ab-screen">
+          <div class="ab-screen-label off">WARP OFF — looked on-target, missed</div>
+          <canvas id="ab-canvas-off" width="300" height="300"></canvas>
+        </div>
+        <div class="ab-screen">
+          <div class="ab-screen-label on">WARP ON — hit, as expected</div>
+          <canvas id="ab-canvas-on" width="300" height="300"></canvas>
+        </div>
+      </div>
+      <div id="ab-result" class="ab-result"></div>
+      <div class="ab-actions">
+        <button id="ab-replay-btn">↻ Replay</button>
+        <button id="ab-save-btn">⤓ Save recording</button>
+        <button id="ab-close-btn">Close &amp; resume</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Low-refresh-rate warning (Phase 6): promoted from a console.warn to a
+       visible banner, since a 30 Hz panel leaves the warp no headroom. -->
+  <div id="perf-banner"></div>
+
+  <!-- Touch / mobile fallback (§5A): Frame Warp is mouse-driven (pointer lock +
+       high-frequency mousemove), which a touchscreen can't provide — so on a
+       phone/tablet we show this instead of a silently-inert canvas. The clip is
+       optional: drop a capture at assets/frame-warp-demo.mp4 and it appears
+       here; until then a placeholder shows. ?force bypasses (if you have a mouse). -->
+  <div id="device-fallback">
+    <div class="fallback-card">
+      <div class="fallback-badge">●&ensp;BEST ON DESKTOP</div>
+      <h1>Use a mouse &amp; keyboard</h1>
+      <p>Frame Warp is a mouse-driven aim demo. The whole point is tracking a
+        moving target with high-frequency mouse motion (pointer lock) — which a
+        touchscreen can't do, so the scene would just sit there.</p>
+      <div class="fallback-media">
+        <video id="fallback-video" class="hidden" muted loop playsinline
+               preload="none" data-src="./assets/frame-warp-demo.mp4"></video>
+        <div id="fallback-placeholder" class="fallback-placeholder">
+          <div class="fallback-play">▶</div>
+          <div>Demo clip</div>
+          <small>drop a capture at <code>assets/frame-warp-demo.mp4</code></small>
+        </div>
+      </div>
+      <p class="fallback-foot">Open this page on a laptop or desktop
+        (Chrome / Edge / Firefox) to play.
+        <a id="fallback-force" href="#">Have a mouse? Continue anyway →</a></p>
+    </div>
+  </div>
+
+  <!-- About / Theory (Phase 6): the math embedded in the artefact. Toggle with i
+       or the ⓘ button. -->
+  <button id="about-btn" title="About the theory (i)">ⓘ&ensp;Theory</button>
+  <div id="about">
+    <div class="about-card">
+      <h2>What you're looking at</h2>
+      <p>Two clocks. The 3D scene is drawn slowly (≈30 FPS) into an off-screen
+        texture from a deliberately <em>stale</em> view direction. Every display
+        refresh, that texture is re-projected toward the <em>freshest</em> mouse
+        input — so the view you see is at most one display frame old.</p>
+
+      <h3>The reprojection</h3>
+      <p class="about-eq">sampleUV = uGuard + (vUv + uDelta) · uScale</p>
+      <ul>
+        <li><b>uDelta</b> — view rotation since render, in display-FOV units
+          (Δu = −Δyaw / fovₓ, Δv = Δpitch / fovᵧ)</li>
+        <li><b>uScale = 1 − 2·guard</b>, <b>uGuard = guard</b> — the guard-band
+          crop that gives the warp real pixels to pull from</li>
+      </ul>
+
+      <h3>The latency it hides</h3>
+      <p>View-direction latency = now − (input time the shown frame used). Warp
+        off ≈ injected lag + frame wait (~150 ms). Warp on ≈ one display interval
+        (~16 ms at 60 Hz). The chart plots both; the gap is the win.</p>
+      <p class="about-foot">Press <kbd>i</kbd> to close · see README / THEORY.md for the full derivation</p>
+    </div>
+  </div>
+
+  <!-- Idle attract / auto-demo captions (shown only while attract mode runs). -->
+  <div id="attract-caption"></div>
+  <div id="attract-hint">click anywhere to play</div>
+
   <!-- Click-to-start prompt (Pointer Lock requires a user gesture). -->
   <div id="overlay">
     <div class="overlay-card">
+      <div class="overlay-badge">●&ensp;LATENCY REPROJECTION DEMO</div>
       <h1>Frame Warp</h1>
-      <p>Click to enter. Track the moving targets and click to shoot.</p>
-      <p class="hint"><kbd>Click</kbd> shoot · <kbd>Esc</kbd> release · <kbd>W</kbd> warp · <kbd>M</kbd> motion vectors · <kbd>Shift+M</kbd> slow-mo · <kbd>D</kbd> demo mode · <kbd>R</kbd>/<kbd>E</kbd> record/export</p>
-      <p class="hint">Both sides run at 30 FPS. Press <kbd>W</kbd>: the warp half fires where you <em>are</em> aiming and hits; without it, where you <em>were</em> — and misses.</p>
+      <p>A 30 FPS, high-latency scene — fixed in one keypress. Click to enter and
+        track the moving target.</p>
+      <p class="hint">Press <kbd>?</kbd> any time for controls</p>
     </div>
   </div>
 

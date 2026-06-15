@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frame Warp — Foveation ΔR (Vector 2)</title>
+  <link rel="stylesheet" href="./src/cloud/cloud.css" />
+  <style>
+    #dr-panel { margin: 14px auto 0; max-width: 640px; background: var(--panel);
+      border: 1px solid #1d2430; border-radius: 8px; padding: 10px 14px; }
+    #h-dr { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+    #h-dr th { color: var(--accent); text-transform: uppercase; font-size: 10px;
+      letter-spacing: .06em; padding: 4px 8px; text-align: right; border-bottom: 1px solid #1d2430; }
+    #h-dr td { padding: 4px 8px; text-align: right; color: var(--fg); }
+    #h-dr td.ok { color: var(--ok); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span class="role-client">Foveation ΔR</span></h1>
+    <span class="subtitle">Vector 2 · real bytes saved by crushing the periphery · sets S_peripheral · offline</span>
+    <button id="h-run">Run</button>
+  </header>
+
+  <div id="status">
+    <div class="row"><span class="label">Harness</span><span id="h-status">—</span></div>
+    <div class="row"><span class="label">Codec / core</span><span id="h-codec">—</span></div>
+    <div class="row"><span class="label">Rate mode</span><span id="h-mode">—</span></div>
+  </div>
+
+  <div id="dr-panel"><table id="h-dr"></table></div>
+
+  <script type="module" src="./src/cloud/foveation-dr.js"></script>
+</body>
+</html>

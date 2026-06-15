@@ -25,6 +25,7 @@ import { Targets } from '../targets.js';
 import { renderFovDeg } from '../projection.js';
 import { postSignal, clearSignal, waitForSignal, waitForIceComplete } from './signaling.js';
 import { CAPTURE, TAG, idToBits, cellRect } from './frame-tag.js';
+import { DISPLAY_FOV_Y, UV_SCALE } from '../config.js';
 
 // --- Fixed capture geometry (shared protocol constants, see frame-tag.js) ---
 const CAPTURE_W = CAPTURE.width;
@@ -33,9 +34,7 @@ const SOURCE_FPS = CAPTURE.fps;
 
 // Same guard-band maths as the local demo: render WIDER than the player will
 // see, so the C3 warp has real pixels to pull from. The client crops back.
-const DISPLAY_FOV_Y = 75;
-const GUARD = 0.12;
-const UV_SCALE = 1 - 2 * GUARD;
+// DISPLAY_FOV_Y and UV_SCALE come from config.js (shared with the demo + sim).
 
 // --- Status panel ------------------------------------------------------------
 function setStat(id, text, ok = null) {
@@ -268,7 +267,8 @@ dc.addEventListener('open', () => {
 
 let inputsQueued = 0;
 dc.addEventListener('message', (e) => {
-  const msg = JSON.parse(e.data);
+  let msg;
+  try { msg = JSON.parse(e.data); } catch { return; } // ignore malformed packets
   if (msg.type === 'input') {
     // The player's pose (Stage C3), crossing the simulated network (C4): it
     // is applied only after the one-way delay, in releaseDue(). The seq

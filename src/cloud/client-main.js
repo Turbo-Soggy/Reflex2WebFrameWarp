@@ -29,13 +29,13 @@ import { Latency } from '../latency.js';
 import { LatencyChart } from '../chart.js';
 import { postSignal, waitForSignal, waitForIceComplete } from './signaling.js';
 import { CAPTURE, TAG, bitsToId, cellRect } from './frame-tag.js';
+import { DISPLAY_FOV_Y, GUARD, fovXRad } from '../config.js';
 import { PoseSync } from './pose-sync.js';
 import { CloudRecorder } from './cloud-recorder.js';
 
 // Must match the server's guard-band geometry (it renders the wider FOV;
 // we crop back to the display FOV — the split-across-the-network guard band).
-const DISPLAY_FOV_Y = 75;
-const GUARD = 0.12;
+// DISPLAY_FOV_Y and GUARD come from config.js (shared with the local demo + sim).
 
 function setStat(id, text, ok = null) {
   const el = document.getElementById(id);
@@ -124,7 +124,7 @@ const displayedPose = { yaw: 0, pitch: 0, frameId: null };
 // Display-rate compositor: reproject the newest decoded frame to the newest
 // local pose. This loop is the whole point of the project.
 const fovY = THREE.MathUtils.degToRad(DISPLAY_FOV_Y);
-const fovX = 2 * Math.atan(Math.tan(fovY / 2) * (CAPTURE.width / CAPTURE.height));
+const fovX = fovXRad(DISPLAY_FOV_Y, CAPTURE.width / CAPTURE.height);
 
 function composite() {
   requestAnimationFrame(composite);
@@ -317,7 +317,8 @@ let planAHits = 0;
     });
 
     dc.addEventListener('message', (ev) => {
-      const msg = JSON.parse(ev.data);
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; } // ignore malformed packets
       if (msg.type === 'pose') {
         // One per server-rendered frame: into the ring buffer (Stage C2).
         poseSync.record(msg, performance.now());

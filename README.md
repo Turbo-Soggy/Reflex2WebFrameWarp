@@ -44,13 +44,22 @@ the mouse to look around.
 | Click (to enter) | Lock the mouse and enter the scene |
 | Move mouse | Aim / look around |
 | Click (in scene) | Shoot — scored into the current mode's tally |
-| `Esc` | Release the mouse |
+| `Esc` | Release the mouse — shows the session summary card if you've taken any shots |
 | `W` | Toggle Frame Warp on/off (the only demo switch) |
 | `M` | Toggle motion vectors on/off *(motion-vectors branch)* |
+| `L` | "Feel the Lag" ramp — lag climbs 0→250 ms over 30 s, then warp snaps on for relief |
 | `D` | Toggle demo mode (hide tech readouts, big scores) |
+| `X` | Mute / unmute the procedural sound |
+| `I` | About / theory panel (the reprojection equation + latency decomposition) |
+| `?` | Keyboard cheat-sheet overlay |
 | `R` | Start / stop recording latency samples |
 | `E` | Export the recorded samples as a CSV |
 | `T` | Record an input trace; stop downloads JSON for `bench/run.js` (replay system) |
+
+First entry runs a short **guided walkthrough** (feel the lag → press `W` → the
+reveal). Append `?nointro` to the URL to skip it. The slider state is mirrored
+into the URL hash (e.g. `#lag=120&hz=20&guard=18`) so a configuration can be
+linked and reproduced exactly.
 
 The **parameter panel** (top-right) has live sliders for injected lag, source
 frame rate, and guard-band width — press `Esc` to release the mouse, adjust, then

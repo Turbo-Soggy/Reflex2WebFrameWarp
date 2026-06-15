@@ -32,14 +32,15 @@
 import { LagSim } from '../lag.js';
 import { validateTrace, poseAt, traceDurationMs } from './trace.js';
 import { percentile } from '../cloud/cloud-recorder.js';
+import { DISPLAY_FOV_Y, ASPECT, GUARD, fovXRad } from '../config.js';
 
 export const DEFAULT_CONFIG = {
   displayHz: 60,        // composite (rAF) rate
   renderHz: 30,         // source render cap (the simulated heavy game)
   lagMs: 80,            // injected pipeline latency
-  guard: 0.12,          // guard-band margin per side, texture-relative
-  displayFovYDeg: 75,   // what the user sees (main.js: DISPLAY_FOV_Y)
-  aspect: 16 / 9,
+  guard: GUARD,         // guard-band margin per side, texture-relative
+  displayFovYDeg: DISPLAY_FOV_Y, // what the user sees (config.js)
+  aspect: ASPECT,
   warmupMs: 500,        // ticks before this are simulated but excluded from
                         // the summary (the lag buffer starts empty, so the
                         // first frames are artificially stale)
@@ -49,8 +50,7 @@ const RAD = Math.PI / 180;
 
 /** Horizontal display FOV in radians — same formula as main.js / client-main.js. */
 export function displayFovX(config) {
-  const fovY = config.displayFovYDeg * RAD;
-  return 2 * Math.atan(Math.tan(fovY / 2) * config.aspect);
+  return fovXRad(config.displayFovYDeg, config.aspect);
 }
 
 /**
@@ -99,6 +99,7 @@ export function simulate(trace, config = {}) {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
   const fovX = displayFovX(cfg);
+  const fovYRad = cfg.displayFovYDeg * RAD;
   const lag = new LagSim(cfg.renderHz, cfg.lagMs);
 
   const dt = 1000 / cfg.displayHz;
@@ -170,6 +171,7 @@ export function simulate(trace, config = {}) {
       trueYaw: truePose.yaw, truePitch: truePose.pitch,
       stalenessMs: now - rendered.t,   // age of the displayed frame's input
       errNoWarpDeg, errWarpDeg, guardUsed,
+      duX: appliedYaw / fovX, duY: appliedPitch / fovYRad, // applied warp shift, display-UV
       guard: rendered.guard, pixelCost,
       clamped: clamped ? 1 : 0,
     });

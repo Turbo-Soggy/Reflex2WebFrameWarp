@@ -23,8 +23,12 @@ export class LatencyChart {
     this._lastDraw = 0;
   }
 
-  /** Draw the two latency series. Throttled internally to ~30 Hz. */
-  draw(now, noWarpSeries, warpSeries) {
+  /**
+   * Draw the two latency series. Throttled internally to ~30 Hz.
+   * @param markers optional [{ x: 0..1, on: bool }] vertical guides drawn where
+   *                Frame Warp was toggled (Phase 5).
+   */
+  draw(now, noWarpSeries, warpSeries, markers = []) {
     if (now - this._lastDraw < 33) return;
     this._lastDraw = now;
 
@@ -52,8 +56,40 @@ export class LatencyChart {
       ctx.fillText(ms.toString(), padL - 5, y);
     }
 
+    // Vertical dashed guides at each W toggle, so the chart shows exactly when
+    // the mode changed (cool = warp on, warm = warp off).
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1;
+    for (const m of markers) {
+      if (m.x < 0 || m.x > 1) continue;
+      const x = padL + m.x * plotW;
+      ctx.strokeStyle = m.on ? COLORS.warp : COLORS.noWarp;
+      ctx.beginPath();
+      ctx.moveTo(x, padT);
+      ctx.lineTo(x, padT + plotH);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
     this._line(noWarpSeries, COLORS.noWarp, padL, padT, plotW, plotH);
     this._line(warpSeries, COLORS.warp, padL, padT, plotW, plotH);
+
+    // Inline μ / p95 annotations (top-right), the stats a report figure wants.
+    ctx.font = '9px ui-monospace, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    this._annotate(noWarpSeries, COLORS.noWarp, W - padR, padT, padL);
+    this._annotate(warpSeries, COLORS.warp, W - padR, padT + 11, padL);
+  }
+
+  /** Draw "μNN p95 NN" for one series at (xRight, y). */
+  _annotate(series, color, xRight, y, padL) {
+    if (!series || series.length < 2) return;
+    const mean = series.reduce((a, b) => a + b, 0) / series.length;
+    const sorted = series.slice().sort((a, b) => a - b);
+    const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+    this.ctx.fillStyle = color;
+    this.ctx.fillText(`μ${mean.toFixed(0)}  p95 ${p95.toFixed(0)}`, xRight, y);
   }
 
   _line(series, color, padL, padT, plotW, plotH) {

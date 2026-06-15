@@ -32,6 +32,7 @@ export class Latency {
 
     this.renderedInputTime = performance.now();
     this._lastCompositeNow = performance.now();
+    this.totalSamples = 0; // monotonic; lets the chart anchor toggle markers
 
     // Smoothed values for the HUD text (the chart uses the raw buffers).
     // null = not yet initialized (so a legitimate 0 ms isn't mistaken for it).
@@ -57,6 +58,7 @@ export class Latency {
 
     this._push(this.noWarp, noWarp);
     this._push(this.warp, warp);
+    this.totalSamples++;
 
     // Exponential smoothing for a steady on-screen readout.
     const a = 0.1;

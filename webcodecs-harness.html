@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frame Warp — WebCodecs A/B (Vector 1)</title>
+  <link rel="stylesheet" href="./src/cloud/cloud.css" />
+  <style>
+    /* Sweep table — same palette/mono as the status panel. */
+    #sweep-panel { margin: 14px auto 0; max-width: 760px; background: var(--panel);
+      border: 1px solid #1d2430; border-radius: 8px; padding: 10px 14px; }
+    #h-sweep { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+    #h-sweep th { color: var(--accent); text-transform: uppercase; font-size: 10px;
+      letter-spacing: .06em; padding: 4px 6px; text-align: right; border-bottom: 1px solid #1d2430; }
+    #h-sweep td { padding: 4px 6px; text-align: right; color: var(--fg); }
+    #h-sweep td.ok { color: var(--ok); }
+    #h-sweep td.bad { color: var(--warn); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span class="role-client">WebCodecs Stress Sweep</span></h1>
+    <span class="subtitle">Vector 1 · bitrate cliff where the pixel tag breaks · metadata stays flat · offline</span>
+    <button id="h-run">Run sweep</button>
+  </header>
+
+  <div id="status">
+    <div class="row"><span class="label">Harness</span><span id="h-status">—</span></div>
+    <div class="row"><span class="label">Codec</span><span id="h-codec">—</span></div>
+  </div>
+
+  <div id="sweep-panel"><table id="h-sweep"></table></div>
+
+  <script type="module" src="./src/cloud/webcodecs-harness.js"></script>
+</body>
+</html>

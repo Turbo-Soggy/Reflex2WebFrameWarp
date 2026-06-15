@@ -27,13 +27,25 @@ import { WarpTarget } from './warp-target.js';
 import { QuadRenderer } from './quad-render.js';
 import { Latency } from './latency.js';
 import { LatencyChart } from './chart.js';
+import { AccuracyChart } from './accuracy-chart.js';
 import { Recorder } from './recorder.js';
 import { Targets } from './targets.js';
+import { HitEffects } from './effects.js';
 import { VelocityPass } from './velocity-pass.js';
 import { renderFovDeg } from './projection.js';
 import { createShooter } from './shooter.js';
 import { installControls } from './controls.js';
+import { Audio } from './audio.js';
+import { installOnboarding } from './onboarding.js';
+import { installSummary } from './summary.js';
+import { announceWarp } from './warp-flash.js';
+import { installFeelTheLag } from './feel-the-lag.js';
+import { installPermalink } from './permalink.js';
+import { installHeatmap } from './heatmap.js';
+import { installAttract } from './attract.js';
+import { installABTest } from './abtest.js';
 import { TraceRecorder } from './replay/trace.js';
+import { DISPLAY_FOV_Y, GUARD, fovXRad } from './config.js';
 
 // --- Display / guard-band geometry constants -------------------------------
 // The FOV the user actually sees. The scene is rendered WIDER than this so the
@@ -52,8 +64,8 @@ import { TraceRecorder } from './replay/trace.js';
 // Trade-off for the report: the 12% margin is tuned for typical gaming
 // sensitivity; pathological input velocities can exhaust it in one frame and
 // fall back to edge clamping. It also costs GPU (we render more than we show).
-const DISPLAY_FOV_Y = 75;          // degrees (constant — what the user sees)
-let guard = 0.12;                  // guard-band margin per side, texture-relative
+// DISPLAY_FOV_Y comes from config.js (shared with the cloud pages + sim).
+let guard = GUARD;                 // guard-band margin per side (default from config.js)
 let uvScale = 1 - 2 * guard;       // fraction of the texture we display (0.76)
 
 // Wider render FOV whose central uvScale crop equals DISPLAY_FOV_Y — the
@@ -81,6 +93,49 @@ function webglAvailable() {
     return false;
   }
 }
+
+// --- Touch / pointer-capable check (§5A) -----------------------------------
+// Frame Warp is mouse-driven: it needs Pointer Lock + high-frequency mousemove
+// to track the moving target. A touch-only device (phone/tablet) can't provide
+// either, so the canvas would render but be inert — worse than an honest "not
+// supported" page. Detect touch-only devices and show a "use a desktop" page
+// (with an optional demo clip) instead. A laptop with a touchscreen still has a
+// FINE pointer (trackpad/mouse), so it is NOT blocked. ?force bypasses for the
+// edge case of a coarse-pointer device that does have a mouse attached.
+function isTouchOnly() {
+  if (new URLSearchParams(location.search).has('force')) return false;
+  const mm = window.matchMedia ? (q) => window.matchMedia(q).matches : () => false;
+  const coarse = mm('(pointer: coarse)');
+  const noFine = !mm('(pointer: fine)');
+  const touch = (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window;
+  return touch && coarse && noFine;
+}
+function showDeviceFallback() {
+  const el = document.getElementById('device-fallback');
+  if (!el) return;
+  el.classList.add('show');
+  const video = document.getElementById('fallback-video');
+  const placeholder = document.getElementById('fallback-placeholder');
+  if (video && video.dataset.src) {
+    video.addEventListener('loadeddata', () => {
+      video.classList.remove('hidden');
+      placeholder?.classList.add('hidden');
+      video.play().catch(() => {}); // autoplay may be blocked — the first frame still shows
+    });
+    // On error (e.g. no clip dropped in yet) we just keep the placeholder.
+    video.src = video.dataset.src; // only fetched on the devices that show this page
+    video.load();
+  }
+  document.getElementById('fallback-force')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    location.search = '?force'; // reload bypassing the touch gate
+  });
+}
+if (isTouchOnly()) {
+  showDeviceFallback();
+  throw new Error('[FrameWarp] touch-only device — showing desktop fallback.');
+}
+
 if (!webglAvailable()) {
   showUnsupported('This demo requires WebGL, which your browser/device doesn’t support.');
   throw new Error('[FrameWarp] WebGL unavailable — halting.');
@@ -114,24 +169,34 @@ camera.position.set(0, 1.7, 0);
 const input = new Input(canvas);
 const lag = new LagSim(30, 80);           // 30 FPS source cap, +80ms pipeline lag
 const hud = new HUD();
+const audio = new Audio();                // procedural SFX; starts on first click
 const warpTarget = new WarpTarget(1, 1);  // sized properly in resize()
 const quad = new QuadRenderer();
 quad.setGuard(guard);
 const velocityPass = new VelocityPass();
 const latency = new Latency();
 const chart = new LatencyChart(document.getElementById('latency-chart'));
+const accuracyChart = new AccuracyChart(document.getElementById('accuracy-chart'));
 const recorder = new Recorder();
 const traceRecorder = new TraceRecorder(); // input traces for the replay system ('T')
 
 // Shooter: moving targets added into the scene, plus the score overlay.
 const targets = new Targets(world.range);
 world.scene.add(targets.group);
+
+// World-space hit sparks (Phase 1). Lives in the scene so the warp reprojects it
+// like everything else; updated on the slow clock just before each scene render.
+const effects = new HitEffects(world.scene);
 const scoreboard = new Scoreboard();
 scoreboard.setActiveMode(false); // demo starts in the "problem" state (warp off)
 
 // The ONLY toggle the user touches. Starts OFF so the demo opens in the
 // "problem" state (laggy, missing), then 'W' turns Frame Warp on.
 let warpEnabled = false;
+
+// Where W was toggled, anchored to latency.totalSamples so the chart can draw a
+// dashed guide at each toggle even as the ring buffer scrolls (Phase 5).
+const warpMarks = [];
 
 // Demo mode hides all the technical readouts and enlarges the score (for
 // non-technical judges). Toggle with 'D'.
@@ -156,9 +221,29 @@ let lastRenderedElapsed = 0;
 
 // --- Pointer-lock overlay --------------------------------------------------
 const overlay = document.getElementById('overlay');
-overlay.addEventListener('click', () => input.lock());
+const onboarding = installOnboarding(); // guided first-time flow (Phase 3)
+const relock = () => { input.lock(); audio.resume(); };
+const summary = installSummary({       // session results card (Phase 5)
+  getData: () => ({
+    ...scoreboard.snapshot(),
+    latNoWarp: latency.smoothNoWarp,
+    latWarp: latency.smoothWarp,
+  }),
+  relock,
+});
+overlay.addEventListener('click', relock);
 document.addEventListener('pointerlockchange', () => {
   overlay.classList.toggle('hidden', input.locked);
+  if (input.locked) onboarding.start();        // kick off the walkthrough on first entry
+  else if (!abtest.isActive()) summary.show(); // releasing the mouse → show the summary
+                                               // (but not while the A/B replay owns the screen)
+});
+
+// Feed every shot into the rolling hit-rate chart (loose pub/sub — the shooter
+// doesn't need to know the chart exists). The latency chart shows the cause; this
+// shows the effect climbing apart between the two modes.
+window.addEventListener('framewarp:shot', (e) => {
+  accuracyChart.record(e.detail.warpOn, e.detail.hit);
 });
 
 // (Shooting lives in shooter.js; keyboard + the recording indicator live in
@@ -230,6 +315,54 @@ function applyWarpLag() {
 }
 applyWarpLag(); // initialise: warp starts off → 150 ms
 
+// The one place warp flips: keeps state, scoreboard highlight, injected lag, the
+// on-screen "moment" and the SFX in lockstep. Both the W key (controls.js) and
+// the "Feel the Lag" relief (feel-the-lag.js) call through here.
+function setWarp(on) {
+  warpEnabled = on;
+  scoreboard.setActiveMode(on);
+  warpMarks.push({ sample: latency.totalSamples, on }); // chart guide (Phase 5)
+  if (warpMarks.length > 16) warpMarks.shift();
+  applyWarpLag();                 // OFF → 150 ms, ON → 50 ms (immediate)
+  announceWarp(on);               // full-screen pulse + big mode call-out
+  if (on) audio.warpOn(); else audio.warpOff();
+  window.dispatchEvent(new CustomEvent('framewarp:warp', { detail: { on } }));
+  console.log('[FrameWarp] warp', on ? 'ENABLED' : 'DISABLED');
+}
+
+// Restore a shared configuration from the URL hash, and keep it updated as the
+// examiner drags the sliders (Phase 6). Applied AFTER the warp-lag init so a
+// linked #lag= wins on load.
+installPermalink({ lag: 'sl-lag', hz: 'sl-hz', guard: 'sl-guard' });
+
+// --- Chart expand toggle (§4C) ---------------------------------------------
+// Grow the chart panel to presentation size and bump the canvas backing
+// resolution so the report figures stay crisp (the modules read width/height
+// each draw, and the loop redraws every frame, so a size change just takes).
+// Bound to the ⤢ button and the G key (controls.js).
+const _chartPanel = document.getElementById('chart-panel');
+const _latCanvas = document.getElementById('latency-chart');
+const _accCanvas = document.getElementById('accuracy-chart');
+let chartsExpanded = false;
+function setChartsExpanded(on) {
+  chartsExpanded = on;
+  _chartPanel.classList.toggle('expanded', on);
+  _latCanvas.width = on ? 620 : 280;
+  _latCanvas.height = on ? 300 : 120;
+  _accCanvas.width = on ? 620 : 280;
+  _accCanvas.height = on ? 200 : 90;
+}
+document.getElementById('chart-expand')?.addEventListener('click', () => setChartsExpanded(!chartsExpanded));
+
+// Live aim-vs-display heat map (§3C): toggled with H, updated each frame in the
+// loop with the fresh vs. rendered orientation gap.
+const heatmap = installHeatmap();
+
+// Automated A/B test + recorded split-screen replay (§3A/§3B/§6C): toggled with
+// B. Drives warp per block, records each shot's aim geometry, then replays the
+// warp-off "should-have-hit" vs warp-on "hit" comparison side by side.
+const abtest = installABTest({ setWarp, getWarpEnabled: () => warpEnabled, relock });
+
 // --- Orientation helper ----------------------------------------------------
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 function setCameraOrientation(yaw, pitch) {
@@ -243,23 +376,61 @@ const clock = new THREE.Clock();
 // Wire up shooting and controls. They read/write the app state through these
 // accessors, so this file keeps owning the state and the loop is untouched.
 const shooter = createShooter({
-  input, warpTarget, targets, camera, scoreboard, clock,
+  input, warpTarget, targets, camera, scoreboard, clock, effects, audio,
   getWarpEnabled: () => warpEnabled,
   getMotionVectorsOn: () => motionVectorsOn,
   getLastRenderedElapsed: () => lastRenderedElapsed,
   getLastRenderWallTime: () => lastRenderWallTime,
 });
+// "Feel the Lag" ramp (Phase 4): drives the lag slider up, then setWarp for relief.
+const feelTheLag = installFeelTheLag({ setWarp, getWarpEnabled: () => warpEnabled, audio });
+
+// Idle attract / auto-demo (§1B): after 30 s untouched, pan the view and flip
+// warp on a loop. Drives the same Input the loop reads; stops on any interaction.
+installAttract({ input, setWarp, getWarpEnabled: () => warpEnabled, isLocked: () => input.locked });
+
 const controls = installControls({
-  scoreboard, recorder, traceRecorder, applyWarpLag,
-  getWarpEnabled: () => warpEnabled, setWarpEnabled: (v) => { warpEnabled = v; },
+  recorder, traceRecorder, audio, setWarp, feelTheLag, heatmap, abtest,
+  toggleCharts: () => setChartsExpanded(!chartsExpanded),
+  getWarpEnabled: () => warpEnabled,
   getMotionVectorsOn: () => motionVectorsOn, setMotionVectorsOn: (v) => { motionVectorsOn = v; },
   getDemoMode: () => demoMode, setDemoMode: (v) => { demoMode = v; },
   getSlowMo: () => slowMo, setSlowMo: (v) => { slowMo = v; },
 });
 
+// --- Display-rate sanity check ---------------------------------------------
+// The warp only has headroom to interpolate when the DISPLAY refreshes faster
+// than the 30 FPS source. On a 30 Hz panel (or battery-saver) rAF fires at the
+// render rate, leaving no in-between frames for the warp — warn once so a low
+// reading isn't mistaken for the technique itself failing.
+const _rateProbe = { dts: [], warned: false };
+function checkDisplayRate(dtMs) {
+  if (_rateProbe.warned || dtMs > 100) return; // skip stalls / backgrounded ticks
+  _rateProbe.dts.push(dtMs);
+  if (_rateProbe.dts.length < 90) return;      // ~1.5 s of real frames
+  const sorted = _rateProbe.dts.slice().sort((a, b) => a - b);
+  const displayHz = 1000 / sorted[sorted.length >> 1];
+  const sourceHz = 1000 / lag.renderInterval;
+  if (displayHz < sourceHz * 1.2) {
+    const msg = `Display ~${displayHz.toFixed(0)} Hz ≈ source ${sourceHz.toFixed(0)} FPS — ` +
+      'the warp has little headroom here. Disable battery saver / enable the high-performance GPU.';
+    console.warn('[FrameWarp] ' + msg);
+    const banner = document.getElementById('perf-banner');
+    if (banner) {
+      banner.textContent = '⚠ ' + msg;
+      banner.classList.add('show');
+      banner.onclick = () => banner.classList.remove('show'); // dismissible
+    }
+  }
+  _rateProbe.warned = true;
+}
+
+let _prevFrameNow = performance.now();
 function frame() {
   requestAnimationFrame(frame);
   const now = performance.now();
+  checkDisplayRate(now - _prevFrameNow);
+  _prevFrameNow = now;
 
   // 1) FAST CLOCK: capture freshest input every tick.
   hud.addInputEvents(input.drainEventCount());
@@ -286,6 +457,9 @@ function frame() {
     const laggedElapsed = Math.max(0, elapsed - lag.lagMs / 1000);
     lastRenderedElapsed = laggedElapsed;
     targets.update(laggedElapsed);
+
+    // Age the hit sparks on the same clock that draws them into the texture.
+    effects.update(now);
 
     renderer.setScissorTest(false);
     renderer.setRenderTarget(warpTarget.rt);
@@ -314,7 +488,7 @@ function frame() {
   // Use the DISPLAY FOV (not the wider render FOV) — the shift is in the units
   // of what the user sees; the shader scales it into the guard-banded texture.
   const fovY = THREE.MathUtils.degToRad(DISPLAY_FOV_Y);
-  const fovX = 2 * Math.atan(Math.tan(fovY / 2) * camera.aspect);
+  const fovX = fovXRad(DISPLAY_FOV_Y, camera.aspect);
 
   // UV shift. Signs chosen so the image slides to track the new view direction.
   const du = -dYaw / fovX;
@@ -331,6 +505,9 @@ function frame() {
   };
   quad.render(renderer, warpTarget.texture, delta, fullW, fullH, mv);
 
+  // Live aim-vs-display divergence (no-op unless the H overlay is open).
+  heatmap.update(fresh, { yaw: warpTarget.renderedYaw, pitch: warpTarget.renderedPitch }, warpEnabled);
+
   hud.countCompositeFrame();
 
   // 4) Measure latency from real timestamps, then record / display.
@@ -343,7 +520,16 @@ function frame() {
     noWarpMs: lat.noWarp,
     warpMs: lat.warp,
   });
-  chart.draw(now, latency.noWarp, latency.warp);
+  // Map each W-toggle onto the chart's x-axis (0..1) for its dashed guide.
+  const n = latency.noWarp.length;
+  const origin = latency.totalSamples - n; // sample index of buffer[0]
+  const markers = [];
+  for (const m of warpMarks) {
+    const idx = m.sample - origin;
+    if (idx >= 0 && idx < n) markers.push({ x: n > 1 ? idx / (n - 1) : 1, on: m.on });
+  }
+  chart.draw(now, latency.noWarp, latency.warp, markers);
+  accuracyChart.draw(now);
   hud.update(now, {
     warpEnabled,
     motionVectorsOn,
@@ -360,10 +546,11 @@ frame();
 // doesn't leak internals to the console (or pin the module graph in memory).
 if (new URLSearchParams(location.search).has('debug')) {
   window.FrameWarp = { renderer, camera, world, input, lag, warpTarget, quad, latency, recorder,
-    traceRecorder, targets, scoreboard, velocityPass, fire: shooter.fire,
+    traceRecorder, targets, scoreboard, velocityPass, effects, audio, feelTheLag, fire: shooter.fire,
+    accuracyChart, heatmap, abtest, setChartsExpanded, setWarp,
     get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
     get motionVectorsOn() { return motionVectorsOn; }, set motionVectorsOn(v) { motionVectorsOn = v; },
     get guard() { return guard; } };
   console.log('[FrameWarp] debug namespace exposed as window.FrameWarp');
 }
-console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors (Shift+M=slow-mo) R=record E=export T=input-trace D=demo-mode.');
+console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors (Shift+M=slow-mo) L=feel-the-lag B=ab-test H=heat-map G=expand-charts D=demo-mode X=mute I=about ?=controls R=record E=export T=input-trace.');

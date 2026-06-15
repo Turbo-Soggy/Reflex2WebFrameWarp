@@ -81,6 +81,34 @@ html, body {
 }
 #crosshair { left: 50%; }
 
+/* ---- Muzzle flash: a 2-frame warm pulse on fire (Phase 1) ----
+   Sits just above the canvas, below the HUD. Opacity is driven by a class the
+   shooter toggles; the transition fades it out fast for a "snap". ---- */
+#muzzle {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle at center,
+    rgba(255, 240, 200, 0.45) 0%, rgba(255, 209, 102, 0.18) 35%, transparent 65%);
+}
+#muzzle.flash { animation: muzzle-pop 0.14s ease-out; }
+@keyframes muzzle-pop {
+  0%   { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+
+/* Subtle screen shake on fire — a tiny canvas jolt that sells the recoil.
+   The guard-band crop means a few px of translate never exposes a real edge. */
+#view.shake { animation: view-shake 0.10s ease-out; }
+@keyframes view-shake {
+  0%   { transform: translate(0, 0); }
+  30%  { transform: translate(2px, -2px); }
+  60%  { transform: translate(-2px, 1px); }
+  100% { transform: translate(0, 0); }
+}
+
 /* ---- Play instruction (below the target). Fades out after the first shot. ---- */
 #play-hint {
   position: fixed;
@@ -101,6 +129,28 @@ html, body {
   transition: opacity 0.6s ease;
 }
 #play-hint.faded { opacity: 0; }
+
+/* ---- "Feel the Lag" ramp banner (Phase 4): warm, urgent, top-center ---- */
+#lag-banner {
+  position: fixed;
+  top: 22%;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 11;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: var(--warn);
+  background: rgba(30, 14, 12, 0.82);
+  border: 1px solid rgba(255, 122, 92, 0.35);
+  border-radius: 10px;
+  padding: 8px 16px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#lag-banner.show { opacity: 1; transform: translate(-50%, 0); }
 
 /* Quick recoil pulse when a shot is fired. */
 .crosshair.shoot { animation: ch-recoil 0.16s ease-out; }
@@ -135,7 +185,14 @@ html, body {
 .statline.active { opacity: 1; }
 .statline .st-label { font-weight: 700; letter-spacing: 0.08em; }
 .statline .st-dim { color: var(--muted); }
-.statline .st-acc { font-weight: 700; }
+.statline .st-acc { font-weight: 700; display: inline-block; }
+/* Pulse the accuracy figure when the tally changes (Phase 2). */
+.statline.bump .st-acc { animation: acc-pop 0.3s ease-out; }
+@keyframes acc-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
 .statline.bad  .st-label, .statline.bad  .st-acc { color: var(--warn); }
 .statline.good .st-label, .statline.good .st-acc { color: var(--accent); }
 
@@ -161,6 +218,49 @@ html, body {
   100% { opacity: 0; transform: translate(-50%, -160%) scale(1); }
 }
 
+/* ---- Warp-toggle moment (Phase 2): colour pulse + big mode announcement ----
+   The pulse is a full-screen vignette that flares from the edges; the
+   announcement is a large centered call-out that rises and fades. Colours:
+   cool accent for ON, warm warn for OFF. ---- */
+#warp-pulse {
+  position: fixed;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+  opacity: 0;
+}
+#warp-pulse.on  { background: radial-gradient(circle at center, transparent 45%, rgba(76, 194, 255, 0.35) 100%); }
+#warp-pulse.off { background: radial-gradient(circle at center, transparent 45%, rgba(255, 122, 92, 0.35) 100%); }
+#warp-pulse.show { animation: warp-pulse 0.45s ease-out; }
+@keyframes warp-pulse {
+  0%   { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+
+#warp-announce {
+  position: fixed;
+  top: 38%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 11;
+  font-family: var(--mono);
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  opacity: 0;
+  pointer-events: none;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+}
+#warp-announce.on  { color: var(--accent); }
+#warp-announce.off { color: var(--warn); }
+#warp-announce.show { animation: warp-announce 0.95s ease-out; }
+@keyframes warp-announce {
+  0%   { opacity: 0; transform: translate(-50%, -30%) scale(0.92); letter-spacing: 0.05em; }
+  18%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+  70%  { opacity: 1; transform: translate(-50%, -55%) scale(1.0); }
+  100% { opacity: 0; transform: translate(-50%, -70%) scale(1.02); letter-spacing: 0.2em; }
+}
+
 /* ---- Demo mode: hide the engineering readouts for a clean, scene-first view.
    The crosshair + scoreboard stay; everything else goes. ---- */
 body.demo-mode #hud,
@@ -179,7 +279,46 @@ body.demo-mode .statline { font-size: 16px; }
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px;
   padding: 10px 12px;
+  transition: padding 0.25s ease;
 }
+.acc-title { margin-top: 12px; }
+
+/* Expand control (top-right of the panel) + the enlarged state for report
+   figures. The canvases' backing resolution is bumped in JS so they stay crisp;
+   here we just re-centre and grow the panel chrome. */
+#chart-expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+#chart-expand:hover { color: var(--fg); border-color: rgba(255, 255, 255, 0.25); }
+body.demo-mode #chart-expand { display: none; }
+
+#chart-panel.expanded {
+  left: 50%;
+  top: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  z-index: 28;
+  padding: 24px 28px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+#chart-panel.expanded .chart-title { font-size: 14px; }
+#chart-panel.expanded .chart-note { max-width: none; font-size: 11px; }
 .chart-title {
   font-family: var(--mono);
   font-size: 11px;
@@ -206,6 +345,42 @@ body.demo-mode .statline { font-size: 16px; }
   color: var(--muted);
   opacity: 0.8;
 }
+
+/* ---- Live aim-vs-display heat map (toggle H), right-middle. Hidden until
+   shown so it never clutters the default view. ---- */
+#heatmap {
+  position: fixed;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%) translateX(12px);
+  z-index: 10;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+#heatmap.show { opacity: 1; transform: translateY(-50%) translateX(0); }
+body.demo-mode #heatmap { display: none; }
+.heatmap-title {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+#heatmap-canvas { display: block; }
+.heatmap-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.heatmap-legend span { display: flex; align-items: center; gap: 5px; }
 
 /* ---- Recording indicator (in chart legend) ---- */
 #rec-indicator { color: var(--muted); }
@@ -242,6 +417,478 @@ body.demo-mode .statline { font-size: 16px; }
   cursor: pointer;
 }
 
+/* ---- Onboarding coach card (Phase 3) ----
+   A non-blocking narrator near the top of the screen. Slides in/out; never
+   eats pointer events so shooting always works underneath it. ---- */
+#coach {
+  position: fixed;
+  top: 13%;
+  left: 50%;
+  transform: translate(-50%, -12px);
+  z-index: 12;
+  max-width: 460px;
+  text-align: center;
+  padding: 16px 22px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(20, 26, 36, 0.92), rgba(12, 16, 24, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+#coach.show { opacity: 1; transform: translate(-50%, 0); }
+.coach-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  margin-bottom: 6px;
+}
+.coach-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* Giant animated "press W" prompt for the toggle step. */
+#coach-prompt {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 12;
+  opacity: 0;
+  pointer-events: none;
+}
+#coach-prompt kbd {
+  font-size: 96px;
+  font-weight: 800;
+  padding: 18px 34px;
+  border-radius: 18px;
+  background: rgba(76, 194, 255, 0.12);
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 40px rgba(76, 194, 255, 0.35);
+}
+#coach-prompt.show { animation: coach-prompt 1.1s ease-in-out infinite; opacity: 1; }
+@keyframes coach-prompt {
+  0%, 100% { transform: translate(-50%, -50%) scale(1.0); opacity: 0.85; }
+  50%      { transform: translate(-50%, -50%) scale(1.12); opacity: 1; }
+}
+
+/* ---- Keyboard cheat sheet (toggle with ?) ---- */
+#cheatsheet {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 10, 0.55);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+#cheatsheet.show { opacity: 1; }
+.cheat-card {
+  min-width: 320px;
+  padding: 22px 26px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.cheat-card h2 {
+  font-size: 16px;
+  letter-spacing: 0.06em;
+  margin-bottom: 14px;
+  color: var(--fg);
+}
+.cheat-card ul { list-style: none; }
+.cheat-card li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.cheat-card li span { margin-left: auto; color: var(--fg); }
+
+/* ---- Session summary card (Phase 5) ---- */
+#summary {
+  position: fixed;
+  inset: 0;
+  z-index: 22; /* above the start overlay so it reads first on Esc */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 10, 0.62);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity 0.25s ease;
+}
+#summary.show { opacity: 1; pointer-events: auto; }
+.summary-card {
+  text-align: center;
+  min-width: 380px;
+  padding: 30px 40px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(76, 194, 255, 0.10), transparent 60%),
+    linear-gradient(180deg, rgba(20, 26, 36, 0.94), rgba(10, 13, 20, 0.96));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+.summary-h {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  margin-bottom: 22px;
+}
+.summary-grid {
+  display: flex;
+  gap: 40px;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+.summary-mode {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.summary-col.off .summary-mode { color: var(--warn); }
+.summary-col.on .summary-mode { color: var(--accent); }
+.summary-acc { font-size: 52px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+.summary-acc span { font-size: 22px; font-weight: 600; color: var(--muted); margin-left: 2px; }
+.summary-col.off .summary-acc { color: var(--warn); }
+.summary-col.on .summary-acc { color: var(--accent); }
+.summary-sub { margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.summary-delta { font-size: 15px; color: var(--fg); margin-bottom: 14px; }
+.summary-delta b { font-weight: 800; }
+.summary-foot { font-family: var(--mono); font-size: 10px; color: var(--muted); line-height: 1.5; }
+.summary-cont { margin-top: 18px; font-family: var(--mono); font-size: 11px; color: var(--accent); opacity: 0.8; }
+
+/* ---- A/B test (§3A/§3B/§6C): guidance banner + recorded split-screen replay --- */
+#ab-banner {
+  position: fixed;
+  top: 14%;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 11;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: rgba(12, 20, 30, 0.86);
+  border: 1px solid rgba(76, 194, 255, 0.35);
+  border-radius: 10px;
+  padding: 8px 16px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#ab-banner.show { opacity: 1; transform: translate(-50%, 0); }
+
+#ab-replay {
+  position: fixed;
+  inset: 0;
+  z-index: 23; /* above the summary card */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 10, 0.66);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+#ab-replay.show { opacity: 1; pointer-events: auto; }
+.ab-card {
+  text-align: center;
+  padding: 26px 30px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(76, 194, 255, 0.08), transparent 60%),
+    linear-gradient(180deg, rgba(20, 26, 36, 0.96), rgba(10, 13, 20, 0.97));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+.ab-h {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  margin-bottom: 18px;
+}
+.ab-screens { display: flex; gap: 22px; justify-content: center; }
+.ab-screen { display: flex; flex-direction: column; align-items: center; }
+.ab-screen-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.ab-screen-label.off { color: var(--warn); }
+.ab-screen-label.on { color: var(--accent); }
+.ab-screen canvas {
+  display: block;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 11, 16, 0.6);
+}
+.ab-result {
+  margin-top: 20px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.ab-result b { font-weight: 800; font-size: 18px; }
+.ab-result b.off { color: var(--warn); }
+.ab-result b.on { color: var(--accent); }
+.ab-result .ab-sep { margin: 0 12px; opacity: 0.6; }
+.ab-actions { margin-top: 20px; display: flex; gap: 12px; justify-content: center; }
+.ab-actions button {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.ab-actions button:hover { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.3); }
+
+/* ---- Low-refresh-rate banner (Phase 6) ---- */
+#perf-banner {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 24;
+  max-width: 90vw;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #1a1208;
+  background: var(--warn);
+  border-radius: 0 0 10px 10px;
+  padding: 7px 16px;
+  white-space: nowrap;
+  display: none;
+}
+#perf-banner.show { display: block; }
+
+/* ---- About / Theory (Phase 6) ---- */
+#about-btn {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 13;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+#about-btn:hover { color: var(--fg); border-color: rgba(255, 255, 255, 0.25); }
+body.demo-mode #about-btn { display: none; }
+
+#about {
+  position: fixed;
+  inset: 0;
+  z-index: 26;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 7, 10, 0.6);
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+#about.show { opacity: 1; pointer-events: auto; }
+.about-card {
+  max-width: 520px;
+  padding: 28px 32px;
+  border-radius: 18px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+.about-card h2 { font-size: 18px; margin-bottom: 12px; }
+.about-card h3 { font-size: 13px; color: var(--accent); letter-spacing: 0.04em; margin: 16px 0 6px; }
+.about-card p { font-size: 13px; line-height: 1.6; color: var(--muted); }
+.about-card p em { color: var(--fg); font-style: italic; }
+.about-card ul { margin: 8px 0 0 18px; }
+.about-card li { font-size: 12px; line-height: 1.6; color: var(--muted); }
+.about-card b { color: var(--fg); }
+.about-eq {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--fg) !important;
+  background: rgba(76, 194, 255, 0.08);
+  border: 1px solid rgba(76, 194, 255, 0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  text-align: center;
+}
+.about-foot { margin-top: 18px; font-family: var(--mono); font-size: 10px; opacity: 0.8; }
+
+/* ---- Idle attract / auto-demo (§1B) ----
+   When attract runs we add body.attract: the start card hides and the overlay
+   goes near-transparent so the self-running scene shows through, with a caption
+   naming the current mode. Any interaction removes the class (see attract.js). */
+#attract-caption {
+  position: fixed;
+  top: 24%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 21;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 26px;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+#attract-caption b { font-weight: 800; }
+#attract-caption.on b { color: var(--accent); }
+#attract-caption.off b { color: var(--warn); }
+#attract-caption span {
+  display: block;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+#attract-hint {
+  position: fixed;
+  bottom: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 21;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+body.attract #attract-caption { opacity: 1; }
+body.attract #attract-hint { animation: attract-hint-pulse 2s ease-in-out infinite; }
+@keyframes attract-hint-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+body.attract #overlay { background: rgba(5, 7, 10, 0.12); backdrop-filter: none; }
+body.attract .overlay-card { display: none; }
+body.attract #play-hint { display: none; }
+
+/* ---- Touch / mobile fallback (§5A): a clean "use a desktop" page shown in
+   place of the inert canvas on touch-only devices. Hidden until main.js detects
+   one. Highest z-index so it covers every other panel. ---- */
+#device-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 24px;
+}
+#device-fallback.show { display: flex; }
+.fallback-card {
+  text-align: center;
+  max-width: 480px;
+  width: 100%;
+  padding: 32px 28px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(76, 194, 255, 0.12), transparent 60%),
+    linear-gradient(180deg, rgba(20, 26, 36, 0.94), rgba(10, 13, 20, 0.96));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+}
+.fallback-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--accent);
+  margin-bottom: 14px;
+  opacity: 0.85;
+}
+.fallback-card h1 {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(180deg, #ffffff, #9fc6e8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.fallback-card p { color: var(--muted); margin-top: 14px; font-size: 14px; line-height: 1.6; }
+.fallback-media {
+  position: relative;
+  margin-top: 20px;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: rgba(8, 11, 16, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.fallback-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fallback-media video.hidden { display: none; }
+.fallback-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+.fallback-placeholder.hidden { display: none; }
+.fallback-play {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--accent);
+  border: 1px solid rgba(76, 194, 255, 0.4);
+  background: rgba(76, 194, 255, 0.08);
+  margin-bottom: 4px;
+}
+.fallback-placeholder code { color: var(--fg); }
+.fallback-foot { font-size: 12px; margin-top: 18px; }
+.fallback-foot a { color: var(--accent); text-decoration: none; }
+.fallback-foot a:hover { text-decoration: underline; }
+
 /* ---- Click-to-start overlay ---- */
 #overlay {
   position: fixed;
@@ -257,15 +904,37 @@ body.demo-mode .statline { font-size: 16px; }
 }
 #overlay.hidden { opacity: 0; pointer-events: none; }
 .overlay-card {
+  position: relative;
   text-align: center;
-  padding: 32px 40px;
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px;
-  background: var(--panel);
+  max-width: 440px;
+  padding: 40px 48px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(76, 194, 255, 0.12), transparent 60%),
+    linear-gradient(180deg, rgba(20, 26, 36, 0.92), rgba(10, 13, 20, 0.94));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-.overlay-card h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
-.overlay-card p { color: var(--muted); margin-top: 10px; font-size: 14px; }
-.overlay-card .hint { font-size: 12px; margin-top: 18px; }
+.overlay-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--accent);
+  margin-bottom: 14px;
+  opacity: 0.85;
+}
+.overlay-card h1 {
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(180deg, #ffffff, #9fc6e8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.overlay-card p { color: var(--muted); margin-top: 14px; font-size: 14px; line-height: 1.6; }
+.overlay-card .hint { font-size: 12px; margin-top: 20px; }
 kbd {
   font-family: var(--mono);
   font-size: 11px;

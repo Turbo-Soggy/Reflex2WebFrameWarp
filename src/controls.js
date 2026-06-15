@@ -1,11 +1,13 @@
 /* ---------------------------------------------------------------------------
    controls.js — Keyboard handling + the recording indicator
    ---------------------------------------------------------------------------
-   Keys: W = warp · M = motion vectors · Shift+M = slow-mo · D = demo mode ·
+   Keys: W = warp · M = motion vectors · Shift+M = slow-mo · L = feel-the-lag
+   ramp · D = demo mode · X = mute · I = about/theory · ? = cheat-sheet ·
    R = record · E = export CSV · T = record an input trace (downloads JSON on
-   stop — feed it to bench/run.js). Logic is unchanged from when it lived in
-   main.js; the toggled app state is read/written through `ctx` accessors so
-   main keeps owning it (and the render loop sees the same values).
+   stop — feed it to bench/run.js). The toggled app state is read/written
+   through `ctx` accessors so main keeps owning it (and the render loop sees the
+   same values); the warp toggle routes through ctx.setWarp (main.js) so every
+   side-effect lives in one place.
 --------------------------------------------------------------------------- */
 
 import { downloadTrace } from './replay/trace.js';
@@ -19,6 +21,14 @@ import { downloadTrace } from './replay/trace.js';
  */
 export function installControls(ctx) {
   const recEl = document.getElementById('rec-indicator');
+
+  // About / Theory panel (Phase 6): toggled by the i key, the ⓘ button, or by
+  // clicking the dimmed backdrop.
+  const toggleAbout = () => document.getElementById('about')?.classList.toggle('show');
+  document.getElementById('about-btn')?.addEventListener('click', toggleAbout);
+  document.getElementById('about')?.addEventListener('click', (e) => {
+    if (e.target.id === 'about') toggleAbout(); // backdrop click closes
+  });
 
   function updateRecIndicator() {
     if (ctx.recorder.recording) {
@@ -34,14 +44,37 @@ export function installControls(ctx) {
 
   window.addEventListener('keydown', (e) => {
     switch (e.key.toLowerCase()) {
-      case 'w': {
-        const on = !ctx.getWarpEnabled();
-        ctx.setWarpEnabled(on);
-        ctx.scoreboard.setActiveMode(on);
-        ctx.applyWarpLag(); // OFF → 150 ms, ON → 50 ms (immediate)
-        console.log('[FrameWarp] warp', on ? 'ENABLED' : 'DISABLED');
+      case 'w':
+        // All the warp side-effects (lag, scoreboard, pulse, SFX, event) live in
+        // one place — main.js setWarp — so the key just flips the bit.
+        ctx.setWarp(!ctx.getWarpEnabled());
+        break;
+      case 'l':
+        ctx.feelTheLag.toggle(); // "Feel the Lag" progressive ramp (Phase 4)
+        break;
+      case 'x': {
+        const muted = ctx.audio?.toggleMute();
+        console.log('[FrameWarp] audio', muted ? 'MUTED' : 'UNMUTED');
         break;
       }
+      case '?':
+      case '/':
+        document.getElementById('cheatsheet').classList.toggle('show');
+        break;
+      case 'i':
+        toggleAbout(); // About / Theory panel
+        break;
+      case 'g':
+        ctx.toggleCharts?.(); // expand / restore the chart panel (§4C)
+        break;
+      case 'h': {
+        const on = ctx.heatmap?.toggle(); // aim-vs-display heat map (§3C)
+        console.log('[FrameWarp] heat map', on ? 'ON' : 'OFF');
+        break;
+      }
+      case 'b':
+        ctx.abtest?.toggle(); // automated A/B test + recorded replay (§3A/§3B/§6C)
+        break;
       case 'r':
         console.log('[FrameWarp] recording', ctx.recorder.toggle(performance.now()) ? 'STARTED' : 'STOPPED');
         updateRecIndicator();

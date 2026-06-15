@@ -20,6 +20,11 @@ import { renderFovDeg } from '../src/projection.js';
 import { LagSim } from '../src/lag.js';
 import { shoot } from '../src/raycast.js';
 import { TAG, idToBits, bitsToId, cellRect } from '../src/cloud/frame-tag.js';
+import {
+  encodePixelTag, decodePixelTag, encodeMetaTag, decodeMetaTag,
+  degradeLuminance, TAG_PIXEL_COST, tagBitErrors,
+} from '../src/cloud/tag-codec.js';
+import { makeFrameMeta, validateFrameMeta, TagABTelemetry, psnrFromMse } from '../src/cloud/pose-media.js';
 import { PoseSync } from '../src/cloud/pose-sync.js';
 import { CloudRecorder, percentile } from '../src/cloud/cloud-recorder.js';
 import {
@@ -32,6 +37,16 @@ import {
 import {
   guardForSpeed, makeAdaptiveGuardPolicy, ADAPTIVE_DEFAULTS,
 } from '../src/replay/adaptive-guard.js';
+import {
+  marginViewportFraction, marginInnerEccentricityDeg, crushInnerEccentricityDeg, foveatedPhi,
+  foveatedPhiInverse, sCoreForExtent, CORE, coreRectPx,
+} from '../src/replay/foveation.js';
+import { fovXRad } from '../src/config.js';
+import {
+  focalPx, translationFromWalk, disparityPx, disparityUV, representativeDepth,
+  residualPx, disocclusionPx, gridResidualStats, cellExtentsFromField,
+  translationUVPerMeter, parallaxDeltaUV,
+} from '../src/replay/parallax.js';
 
 // --- tiny green/red harness ------------------------------------------------
 let passed = 0, failed = 0;
@@ -200,6 +215,56 @@ test('cells tile the tag region without overlap', () => {
     seen.add(key);
   }
   assert.equal(seen.size, TAG.bits); // 16 distinct cells
+});
+
+// ===========================================================================
+section('Vector 1 — frame-ID carrier: pixel steganography vs codec metadata (cloud/tag-codec.js)');
+
+// Seeded LCG so the noise sweep is reproducible (same generator as trace.js).
+function lcg(seed) {
+  let s = seed >>> 0;
+  return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+}
+const SAMPLE_IDS = [0, 1, 5, 0x00ff, 0x0f0f, 0xaaaa, 0x5555, 1234, 65535];
+
+test('clean channel: both carriers round-trip every id exactly', () => {
+  for (const id of SAMPLE_IDS) {
+    assert.equal(decodePixelTag(encodePixelTag(id)), id & 0xffff);
+    assert.equal(decodeMetaTag(encodeMetaTag(id)), id & 0xffff);
+  }
+});
+
+test('metadata carrier: ZERO decode error at every degradation level (by construction)', () => {
+  // The whole Vector-1 claim: an integer side-channel is never quantised, so
+  // no amount of pixel degradation can touch it. Exact, not a proxy.
+  for (const strength of [0, 0.5, 0.9, 0.99, 1]) {
+    for (const id of SAMPLE_IDS) {
+      assert.equal(decodeMetaTag(encodeMetaTag(id)), id & 0xffff, `strength ${strength}, id ${id}`);
+    }
+  }
+});
+
+test('pixel carrier: exact under mild degradation, fails as contrast collapses', () => {
+  const rng = lcg(0xC0FFEE);
+  const ber = (strength, sigma) => {
+    let wrong = 0, total = 0;
+    for (const id of SAMPLE_IDS) {
+      const got = decodePixelTag(degradeLuminance(encodePixelTag(id), { strength, sigma, rng }));
+      const a = idToBits(id & 0xffff), b = idToBits(got);
+      for (let k = 0; k < TAG.bits; k++) { if (a[k] !== b[k]) wrong++; total++; }
+    }
+    return wrong / total;
+  };
+  // High contrast intact → the engineered tag is exact (this is WHY it works).
+  assert.equal(ber(0.0, 8), 0);
+  // Near-total contrast collapse + noise → bits flip: the failure mode the
+  // metadata carrier provably lacks. (Magnitude is proxy; existence is the point.)
+  assert.ok(ber(0.99, 30) > 0, 'collapsed-contrast pixel tag should corrupt some bits');
+});
+
+test('metadata carrier reclaims the 64×64 guard-band pixels the tag spends', () => {
+  assert.equal(TAG_PIXEL_COST.pixel, 64 * 64);
+  assert.equal(TAG_PIXEL_COST.metadata, 0);
 });
 
 // ===========================================================================
@@ -443,6 +508,222 @@ test('hot input: fixed 0.12 clamps, adaptive grows past it and does not', () => 
   assert.ok(fixed.clampRate > 0, 'the hot trace should exhaust a fixed 12% margin');
   assert.equal(adaptive.clampRate, 0, 'adaptive should absorb the same motion');
   assert.ok(adaptive.guard.max > 0.12, 'it does so by exceeding the fixed margin');
+});
+
+// ===========================================================================
+section('Vector 1 stress-sweep metrics (tagBitErrors, psnrFromMse)');
+
+test('tagBitErrors is the Hamming distance over the 16 tag bits', () => {
+  assert.equal(tagBitErrors(0xABCD, 0xABCD), 0);
+  assert.equal(tagBitErrors(0x0000, 0x0001), 1);
+  assert.equal(tagBitErrors(0x0000, 0x000F), 4);
+  assert.equal(tagBitErrors(0x0000, 0xFFFF), 16);
+  assert.equal(tagBitErrors(0xFFFF + 65536, 0xFFFF), 0); // 16-bit masked
+});
+
+test('psnrFromMse: identical → Infinity, mse=peak² → 0 dB, mse=1 → 48.13 dB', () => {
+  assert.equal(psnrFromMse(0), Infinity);
+  approx(psnrFromMse(255 * 255), 0, 1e-9);
+  approx(psnrFromMse(1), 48.13, 0.01);
+});
+
+// ===========================================================================
+section('Pose-Tagged Media protocol + A/B telemetry (cloud/pose-media.js)');
+
+test('FrameMeta validates frameId (16-bit) and g (in [0,0.5))', () => {
+  assert.deepEqual(makeFrameMeta(1234, 0.12), { frameId: 1234, g: 0.12 });
+  assert.equal(makeFrameMeta(65536 + 5, 0.12).frameId, 5);    // wraps like the tag
+  assert.throws(() => validateFrameMeta({ frameId: -1, g: 0.12 }), /frameId/);
+  assert.throws(() => validateFrameMeta({ frameId: 70000, g: 0.12 }), /frameId/);
+  assert.throws(() => validateFrameMeta({ frameId: 10, g: 0.5 }), /g must be/);
+  assert.throws(() => validateFrameMeta({ frameId: 10, g: -0.01 }), /g must be/);
+});
+
+test('clean run: metadata id is exact, pixel tag costs bits, no drops', () => {
+  const t = new TagABTelemetry();
+  for (let i = 0; i < 100; i++) {
+    t.observe({
+      frameId: i, metaId: i, pixelId: i,        // both carriers recover the id
+      bytesTagged: 1000 + 50, bytesClean: 1000, // the corner block costs ~50 B
+      chunkDropped: false, sidecarDropped: false,
+    });
+  }
+  const s = t.summary();
+  assert.equal(s.sync.metadataExactRate, 1);
+  assert.equal(s.sync.pixelExactRate, 1);
+  approx(s.bytes.pixelTagOverheadPct, 5, 1e-9);   // (1050-1000)/1000 = +5%
+  assert.equal(s.drops.inbandIdAvailability, 1);
+  assert.equal(s.drops.sidecarIdAvailability, 1);
+});
+
+test('metadata is bit-exact where the pixel tag is not (corrupted-pixel run)', () => {
+  const t = new TagABTelemetry();
+  for (let i = 0; i < 100; i++) {
+    // The decoded timestamp is always the true id; the pixel readback flips on
+    // every 10th frame (heavy compression on the corner).
+    t.observe({
+      frameId: i, metaId: i, pixelId: (i % 10 === 0) ? (i ^ 1) : i,
+      bytesTagged: null, bytesClean: null, chunkDropped: false, sidecarDropped: false,
+    });
+  }
+  const s = t.summary();
+  assert.equal(s.sync.metadataExactRate, 1);      // metadata: exact, always
+  approx(s.sync.pixelExactRate, 0.9, 1e-9);        // pixel: 10% corrupted
+});
+
+test('drop resilience: in-band id survives sidecar loss (the design claim)', () => {
+  const t = new TagABTelemetry();
+  const rng = lcg(0xBEEF);
+  for (let i = 0; i < 1000; i++) {
+    const chunkDropped = rng() < 0.1;             // 10% media loss
+    const sidecarDropped = rng() < 0.2;           // 20% sidecar loss (independent)
+    t.observe({
+      frameId: i,
+      metaId: chunkDropped ? null : i,            // id rides IN the chunk
+      pixelId: null,
+      bytesTagged: null, bytesClean: null,
+      chunkDropped, sidecarDropped,
+    });
+  }
+  const s = t.summary();
+  // Every delivered frame had its id available in-band, by construction.
+  assert.equal(s.drops.inbandIdAvailability, 1);
+  // A sidecar-only scheme would have lost the id on ~20% of delivered frames.
+  assert.ok(s.drops.sidecarIdAvailability < 0.85,
+    `sidecar availability ${s.drops.sidecarIdAvailability} should trail in-band`);
+  assert.ok(s.drops.inbandIdAvailability > s.drops.sidecarIdAvailability);
+});
+
+// ===========================================================================
+section('Vector 2 foveation budget geometry (replay/foveation.js)');
+
+test('marginViewportFraction: 0 at rest, caps at the margin once exhausted', () => {
+  approx(marginViewportFraction(0, 0.12), 0, 1e-12);
+  approx(marginViewportFraction(0.5, 0.12), 0.5 * 0.12 / 0.76, 1e-9);
+  approx(marginViewportFraction(1, 0.12), 0.12 / 0.76, 1e-9);
+  approx(marginViewportFraction(2, 0.12), 0.12 / 0.76, 1e-9); // clamp: can't pull in more than the margin
+});
+
+test('marginInnerEccentricityDeg: margin only ever surfaces in the far periphery', () => {
+  // Fixed 0.12 fully consumed → the strip's inner edge is ~36.8° off-centre.
+  approx(marginInnerEccentricityDeg(1, 0.12), 36.77, 0.1);
+  // At rest the "strip" collapses to the view edge = half the horizontal FOV.
+  approx(marginInnerEccentricityDeg(0, 0.12), 53.74, 0.1);
+  // A wider adaptive guard reaches further in (~17.9°) but still well past the
+  // central ±10.8° fovea — the worst case the budget bench finds.
+  approx(marginInnerEccentricityDeg(1, 0.20), 17.91, 0.1);
+});
+
+test('crushInnerEccentricityDeg: a static core, at rest and under worst warp', () => {
+  const fov = 107.476;
+  // Inner core = encoded cols 16–64 (coreHalf 0.3): ~42.4° off-centre at rest…
+  approx(crushInnerEccentricityDeg(0.3, 0.12, 0, fov), 42.4, 0.2);
+  // …but under the max fixed-guard warp shift (du = g/uScale = 0.158): ~25.5°.
+  approx(crushInnerEccentricityDeg(0.3, 0.12, 0.12 / 0.76, fov), 25.5, 0.3);
+  // The "18° at rest" core (cols 30–50, coreHalf 0.125) looks safe at rest…
+  approx(crushInnerEccentricityDeg(0.125, 0.12, 0, fov), 17.6, 0.3);
+  // …yet the same warp drives its crush into the fovea — the rest≠warp trap.
+  assert.ok(crushInnerEccentricityDeg(0.125, 0.12, 0.12 / 0.76, fov) < 2);
+  // A core covering the whole displayed crop → crush off-screen → Infinity.
+  assert.equal(crushInnerEccentricityDeg(0.5, 0.12, 0, fov), Infinity);
+});
+
+test('foveatedPhi: continuous at the boundary, = the linear crop in the core, shallower outside', () => {
+  const P = { xb: 0.30, sCore: 0.76, sPeriph: 0.30 };
+  approx(foveatedPhi(P.xb, P), 0.76 * 0.30, 1e-12);        // continuous at x_b
+  approx(foveatedPhi(0.2, P), 0.76 * 0.2, 1e-12);          // core IS the deployed crop (slope uScale)
+  approx(foveatedPhi(-0.2, P), -0.76 * 0.2, 1e-12);        // odd-symmetric
+  approx((foveatedPhi(0.5, P) - foveatedPhi(P.xb, P)) / (0.5 - P.xb), 0.30, 1e-9); // periphery slope = sPeriph
+  assert.ok(Math.abs(foveatedPhi(0.5, P)) < 0.5);          // leaves a warp reserve inside the frame
+});
+
+test('CORE is the validated fovea-safe rectangle; coreRectPx tiles it', () => {
+  assert.deepEqual(CORE.cols, [22, 58]);
+  assert.deepEqual(CORE.rows, [11, 34]);
+  assert.deepEqual(coreRectPx(16), { x0: 352, y0: 176, x1: 928, y1: 544 });
+});
+
+test('foveatedPhiInverse is the exact inverse of foveatedPhi (server squash ↔ client warp)', () => {
+  const P = { xb: 0.296, sCore: 0.76, sPeriph: 0.38 };
+  for (const x of [-0.5, -0.3, -0.1, 0, 0.1, 0.296, 0.3, 0.45, 0.5]) {
+    approx(foveatedPhiInverse(foveatedPhi(x, P), P), x, 1e-9);
+  }
+  approx(foveatedPhi(0, P), 0, 1e-12);                 // centre is fixed
+  approx(foveatedPhiInverse(0.76 * 0.296, P), 0.296, 1e-9); // the core boundary maps back
+});
+
+test('sCoreForExtent supersamples the core so the render edge fills the encoded edge', () => {
+  const xb = 0.296, sPeriph = 0.38, XR = 0.658; // real-pipeline config (render reused)
+  const sCore = sCoreForExtent(xb, sPeriph, XR);
+  approx(sCore, 1.224, 0.01);                          // core ~1.6× supersampled
+  approx(foveatedPhi(XR, { xb, sCore, sPeriph }), 0.5, 1e-9); // Φ(XR)=0.5, no wider FOV
+  approx(sCoreForExtent(xb, 0.76, 0.5 / 0.76), 0.76, 1e-9); // sPeriph=uScale at the exact linear extent → no foveation
+});
+
+// ===========================================================================
+section('Vector 3 depth-aware reprojection — parallax term (replay/parallax.js)');
+
+const _halfX = fovXRad() / 2; // half horizontal FOV (rad) at the display FOV
+
+test('disparity reproduces the §4.5 figure: ~74–77 px at walk speed, 2 m, 150 ms', () => {
+  const t = translationFromWalk(1.4, 150);             // 0.21 m
+  approx(t, 0.21, 1e-12);
+  const px = disparityPx(t, 2, _halfX, 1920);
+  assert.ok(px > 70 && px < 80, `expected ~77 px, got ${px.toFixed(1)}`);
+  // …and it rises to ~77 px at a slightly brisker 1.46 m/s — the quoted value.
+  assert.ok(disparityPx(translationFromWalk(1.46, 150), 2, _halfX, 1920) > 76);
+});
+
+test('disparity is inverse in depth and consistent between px and UV', () => {
+  const t = 0.21;
+  approx(disparityPx(t, 4, _halfX, 1920), disparityPx(t, 2, _halfX, 1920) / 2, 1e-9); // 2× depth → ½ shift
+  approx(disparityUV(t, 2, _halfX) * 1920, disparityPx(t, 2, _halfX, 1920), 1e-9);    // UV·W == px
+  approx(focalPx(_halfX, 1920), 960 / Math.tan(_halfX), 1e-9);
+});
+
+test('representativeDepth is the inverse-depth midpoint (harmonic mean)', () => {
+  approx(representativeDepth(2, 20), 2 / (0.5 + 0.05), 1e-12); // 3.636…
+  approx(representativeDepth(5, 5), 5, 1e-12);                 // flat cell → itself
+});
+
+test('residual: zero on a flat cell, and a 4× cut on a near [2,4] cell', () => {
+  approx(residualPx(0.21, 3, 3, _halfX, 1920), 0, 1e-12);     // constant depth → fully corrected
+  const r = residualPx(0.21, 2, 4, _halfX, 1920);
+  approx(r, 18.5, 0.3);                                       // worst-case ~18.5 px
+  assert.ok(r < disparityPx(0.21, 2, _halfX, 1920) / 3);     // far better than uncorrected (~74 px)
+});
+
+test('disocclusion = differential parallax across a step, = 2× the straddling-cell residual', () => {
+  const occ = disocclusionPx(0.21, 2, 20, _halfX, 1920);
+  approx(occ, 0.21 * (0.5 - 0.05) * focalPx(_halfX, 1920), 1e-9); // ~66.5 px
+  // A cell spanning the full [2,20] step: best single-depth correction leaves
+  // exactly half the disocclusion band as residual (rep depth sits mid-gap).
+  approx(residualPx(0.21, 2, 20, _halfX, 1920), occ / 2, 1e-9);
+});
+
+test('grid residual shrinks as the depth grid gets finer (quantization, not physics)', () => {
+  // Receding floor: depth grows from 2 m (bottom) to 20 m (top) across the frame.
+  const floor = (_u, v) => 2 + (20 - 2) * v;
+  const opts = { translationM: 0.21, halfFovRad: _halfX, viewportPx: 1920 };
+  const coarse = gridResidualStats(cellExtentsFromField(floor, 16, 9), opts);
+  const fine   = gridResidualStats(cellExtentsFromField(floor, 32, 18), opts);
+  assert.ok(fine.maxPx < coarse.maxPx, `finer grid should reduce residual (${fine.maxPx} !< ${coarse.maxPx})`);
+  assert.ok(fine.meanPx < coarse.meanPx);
+});
+
+test('flat scene → every cell fully corrected (no residual at any grid)', () => {
+  const flat = () => 8;
+  const stats = gridResidualStats(cellExtentsFromField(flat, 16, 9), { translationM: 0.5, halfFovRad: _halfX, viewportPx: 1920 });
+  approx(stats.maxPx, 0, 1e-12);
+});
+
+test('shader twin: parallaxDeltaUV(transUVPerMeter) matches the disparity primitive', () => {
+  const tx = 0.21, d = 2, halfY = _halfX; // square pixels → halfY focal == halfX here for the check
+  const num = translationUVPerMeter(tx, 0, _halfX, halfY);
+  const shift = parallaxDeltaUV(num, d);
+  approx(Math.abs(shift[0]), disparityUV(tx, d, _halfX), 1e-12); // GPU path == measured shift
+  approx(shift[1], 0, 1e-12);                                    // no vertical translation → no v shift
+  approx(parallaxDeltaUV(num, 2 * d)[0], shift[0] / 2, 1e-12);   // inverse in depth, like disparity
 });
 
 // ===========================================================================

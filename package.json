@@ -6,7 +6,8 @@
   "description": "Frame Warp — a browser demo of motion-to-photon latency mitigation via frame reprojection.",
   "scripts": {
     "start": "python serve.py 8000",
-    "test": "node test/test.js"
+    "test": "node test/test.js",
+    "test:ui": "node test/smoke-ui.mjs"
   },
   "devDependencies": {
     "three": "^0.169.0"

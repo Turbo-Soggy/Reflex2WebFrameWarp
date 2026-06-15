@@ -60,15 +60,20 @@ export class Input {
   _onMouseMove(e) {
     if (!this.locked) return;
 
-    // movementX/Y are raw deltas in pixels since the last event. This is the
-    // high-frequency signal we care about.
-    this.yaw   -= e.movementX * SENSITIVITY;
-    this.pitch -= e.movementY * SENSITIVITY;
+    // Browsers COALESCE several hardware mouse samples into one dispatched
+    // mousemove. Expand them so the input-rate readout reflects the true sample
+    // rate and no sub-event motion is dropped (falls back to [e] if absent).
+    // movementX/Y are raw deltas in pixels — the high-frequency signal we want.
+    const batch = e.getCoalescedEvents ? e.getCoalescedEvents() : null;
+    const events = batch && batch.length ? batch : [e];
+    for (const ev of events) {
+      this.yaw   -= ev.movementX * SENSITIVITY;
+      this.pitch -= ev.movementY * SENSITIVITY;
+      this.eventCount++;
+    }
 
     // Keep pitch within limits; yaw is free to wrap around.
     this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
-
-    this.eventCount++;
   }
 
   /** Read & reset the event counter. Returns events since last call. */

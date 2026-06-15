@@ -75,44 +75,84 @@ export class HUD {
 --------------------------------------------------------------------------- */
 export class Scoreboard {
   constructor() {
-    this.el = {
-      statsOff: document.getElementById('stats-off'), // WITHOUT warp
-      statsOn: document.getElementById('stats-on'),   // WITH warp
-      fb: document.getElementById('feedback'),
-    };
     this.off = { hits: 0, misses: 0 };
     this.on = { hits: 0, misses: 0 };
+    this.fb = document.getElementById('feedback');
     this._fbTimer = null;
-    this._render();
+
+    // Build each line's inner spans ONCE and keep node refs, so the accuracy can
+    // animate (count-up + pulse) instead of being blown away on every shot.
+    this.lines = {
+      off: buildLine(document.getElementById('stats-off'), 'WITHOUT WARP'),
+      on: buildLine(document.getElementById('stats-on'), 'WITH WARP'),
+    };
+    this._shownAcc = { off: 0, on: 0 }; // currently-displayed % (count-up source)
+    this._render('off');
+    this._render('on');
   }
 
   /** Record one shot into the bucket for the current warp mode, flash feedback. */
   registerShot(warpOn, isHit) {
     const bucket = warpOn ? this.on : this.off;
     if (isHit) bucket.hits++; else bucket.misses++;
-    this._render();
+    this._render(warpOn ? 'on' : 'off');
     this._flash(isHit);
   }
 
   /** Highlight whichever mode is currently active (called when W toggles). */
   setActiveMode(warpOn) {
-    this.el.statsOn.classList.toggle('active', warpOn);
-    this.el.statsOff.classList.toggle('active', !warpOn);
+    this.lines.on.el.classList.toggle('active', warpOn);
+    this.lines.off.el.classList.toggle('active', !warpOn);
   }
 
   reset() {
     this.off = { hits: 0, misses: 0 };
     this.on = { hits: 0, misses: 0 };
-    this._render();
+    this._shownAcc = { off: 0, on: 0 };
+    this._render('off');
+    this._render('on');
   }
 
-  _render() {
-    this.el.statsOff.innerHTML = statsHTML('WITHOUT WARP', this.off);
-    this.el.statsOn.innerHTML = statsHTML('WITH WARP', this.on);
+  /** Read accuracy numbers for the session summary card (Phase 5). */
+  snapshot() {
+    return { off: { ...this.off }, on: { ...this.on } };
+  }
+
+  _render(key) {
+    const bucket = key === 'on' ? this.on : this.off;
+    const line = this.lines[key];
+    const shots = bucket.hits + bucket.misses;
+    const acc = shots ? Math.round((bucket.hits / shots) * 100) : 0;
+
+    line.hits.textContent = bucket.hits;
+    line.miss.textContent = bucket.misses;
+    this._countUp(key, acc);
+
+    // Pulse the line so the eye is drawn to the number that just changed.
+    line.el.classList.remove('bump');
+    void line.el.offsetWidth;
+    line.el.classList.add('bump');
+  }
+
+  /** Animate the accuracy figure from its shown value to the new target. */
+  _countUp(key, target) {
+    const line = this.lines[key];
+    cancelAnimationFrame(line._raf);
+    const from = this._shownAcc[key];
+    const start = performance.now();
+    const DUR = 280;
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / DUR);
+      const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      line.acc.textContent = Math.round(from + (target - from) * eased) + '%';
+      if (t < 1) line._raf = requestAnimationFrame(step);
+      else this._shownAcc[key] = target;
+    };
+    line._raf = requestAnimationFrame(step);
   }
 
   _flash(isHit) {
-    const fb = this.el.fb;
+    const fb = this.fb;
     fb.textContent = isHit ? '✓' : '✗';
     fb.className = 'feedback ' + (isHit ? 'hit' : 'miss');
     // Re-trigger the CSS animation even on rapid repeat clicks.
@@ -123,12 +163,18 @@ export class Scoreboard {
   }
 }
 
-/* A slim single line: LABEL — N hits · M misses · A% accuracy. */
-function statsHTML(label, { hits, misses }) {
-  const shots = hits + misses;
-  const acc = shots ? Math.round((hits / shots) * 100) : 0;
-  return `<span class="st-label">${label}</span>` +
-         `<span class="st-dim"> — </span>${hits} hits` +
-         `<span class="st-dim"> · </span>${misses} miss` +
-         `<span class="st-dim"> · </span><span class="st-acc">${acc}%</span>`;
+/* Build a stat line's inner spans once; return the nodes we update per shot. */
+function buildLine(el, label) {
+  el.innerHTML =
+    `<span class="st-label">${label}</span>` +
+    `<span class="st-dim"> — </span><span class="st-hits">0</span> hits` +
+    `<span class="st-dim"> · </span><span class="st-miss">0</span> miss` +
+    `<span class="st-dim"> · </span><span class="st-acc">0%</span>`;
+  return {
+    el,
+    hits: el.querySelector('.st-hits'),
+    miss: el.querySelector('.st-miss'),
+    acc: el.querySelector('.st-acc'),
+    _raf: 0,
+  };
 }

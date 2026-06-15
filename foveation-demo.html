@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Frame Warp — Foveation Shader (Vector 2)</title>
+
+  <script type="importmap">
+  { "imports": { "three": "./vendor/three/three.module.js" } }
+  </script>
+  <link rel="stylesheet" href="./src/cloud/cloud.css" />
+  <style>
+    #fov-controls { margin: 12px auto 0; max-width: min(100%, calc((100vh - 220px) * 16 / 9));
+      background: var(--panel); border: 1px solid #1d2430; border-radius: 8px; padding: 10px 14px;
+      font: 12px var(--mono); color: var(--muted); }
+    #fov-controls .row { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+    #fov-controls input[type=range] { flex: 1; max-width: 360px; }
+    #fov-controls button { background: var(--panel); color: var(--fg); border: 1px solid var(--muted);
+      border-radius: 6px; padding: 4px 10px; font: 12px var(--mono); cursor: pointer; }
+    #fov-controls button:hover { border-color: var(--accent); }
+    #fov-readout { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span class="role-client">Foveation Shader</span></h1>
+    <span class="subtitle">Vector 2 · render → foveal squash → reconstruct · <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> modes</span>
+  </header>
+
+  <main>
+    <canvas id="fov-view" width="1280" height="720"></canvas>
+  </main>
+
+  <div id="fov-controls">
+    <div class="row">
+      <button data-mode="0">1 · Reconstructed</button>
+      <button data-mode="1">2 · Encoded</button>
+      <button data-mode="2">3 · Full-res (A/B)</button>
+    </div>
+    <div class="row"><span style="width:72px">S_periph</span><input id="sl-speriph" type="range" min="0.19" max="0.76" step="0.01" value="0.38" /></div>
+    <div class="row"><span style="width:72px">warp</span><input id="sl-warp" type="range" min="-0.55" max="0.55" step="0.01" value="0" /></div>
+    <div class="row"><span id="fov-readout">—</span></div>
+  </div>
+
+  <script type="module" src="./src/foveation-demo.js"></script>
+</body>
+</html>

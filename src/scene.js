@@ -113,8 +113,58 @@ export function createScene() {
     scene.add(post);
   }
 
-  // The environment is static; targets.js owns the only motion.
-  return { scene, update(_elapsed) {}, range: RANGE };
+  // --- Ambient dust motes (Phase 1) ----------------------------------------
+  // Faint motes drifting in the strip-light pools turn the "box" into a space.
+  // They cost almost nothing: one additive Points cloud, gently animated in
+  // update(). Never shadow-casting, never ray-tested.
+  const dust = makeDustMotes(halfW, height, backZ, nearZ);
+  scene.add(dust.points);
+
+  // targets.js owns the only gameplay motion; here we just drift the motes.
+  return {
+    scene,
+    update(elapsed) { dust.update(elapsed); },
+    range: RANGE,
+  };
+}
+
+/* A slow-drifting cloud of dust motes filling the range volume. */
+function makeDustMotes(halfW, height, backZ, nearZ) {
+  const COUNT = 240;
+  const positions = new Float32Array(COUNT * 3);
+  const base = new Float32Array(COUNT * 3); // rest positions to sway around
+  for (let i = 0; i < COUNT; i++) {
+    const x = (Math.random() * 2 - 1) * (halfW - 0.5);
+    const y = Math.random() * (height - 0.6) + 0.3;
+    const z = backZ + 1 + Math.random() * (nearZ - backZ - 2);
+    base[i * 3] = positions[i * 3] = x;
+    base[i * 3 + 1] = positions[i * 3 + 1] = y;
+    base[i * 3 + 2] = positions[i * 3 + 2] = z;
+  }
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const points = new THREE.Points(geom, new THREE.PointsMaterial({
+    color: 0xcfe0ff,
+    size: 0.025,
+    transparent: true,
+    opacity: 0.5,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    sizeAttenuation: true,
+  }));
+  points.frustumCulled = false;
+
+  function update(elapsed) {
+    for (let i = 0; i < COUNT; i++) {
+      const o = i * 3;
+      positions[o]     = base[o]     + Math.sin(elapsed * 0.3 + i) * 0.08;
+      positions[o + 1] = base[o + 1] + Math.sin(elapsed * 0.18 + i * 1.7) * 0.06
+                         + ((elapsed * 0.05 + i * 0.013) % 1) * 0.4; // slow rise
+      positions[o + 2] = base[o + 2] + Math.cos(elapsed * 0.22 + i) * 0.08;
+    }
+    geom.attributes.position.needsUpdate = true;
+  }
+  return { points, update };
 }
 
 /* --- Procedural textures (canvas-baked, no downloads) --------------------- */

@@ -88,6 +88,11 @@ export function createWarpMaterial() {
         vec2 sampleUV = clamp(camSample - objShift, 0.0, 1.0);
         vec4 warpedColor = texture2D(tDiffuse, sampleUV);
 
+        // Motion vectors off → objShift is 0, so warpedColor is already the
+        // centre of its own 3x3 neighbourhood and the de-ghost clamp below is a
+        // provable no-op. Skip its 8 extra texture fetches.
+        if (uMotionVectors < 0.5) { gl_FragColor = warpedColor; return; }
+
         // 3) DE-GHOSTING (neighborhood color clamping). Constrain the reprojected
         //    color to the min/max AABB of the 3x3 neighborhood at the CURRENT
         //    (un-object-shifted) location, camSample. This removes the bright halo
