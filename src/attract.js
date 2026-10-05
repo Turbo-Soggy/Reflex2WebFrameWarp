@@ -14,7 +14,14 @@
    exactly as it would a human's motion — the warp ON/OFF contrast is the real
    thing, not a canned animation. On stop it recentres the view and drops warp
    back OFF so whoever steps up starts in the honest "problem" state.
+
+   The sweep itself lives in autopilot.js (one implementation, shared with the
+   presenter's hands-free 'A' driver); this module only owns the idle timer,
+   the warp flips and the caption. disable()/enable() let presenter mode (and
+   the chapter system) switch the idle loop off entirely.
 --------------------------------------------------------------------------- */
+
+import { createAutopilot } from './autopilot.js';
 
 export function installAttract(ctx) {
   const { input, setWarp, getWarpEnabled, isLocked } = ctx;
@@ -30,14 +37,23 @@ export function installAttract(ctx) {
   const YAW_PERIOD = 3.6;      // seconds per look cycle
   const PHASE_MS = 5000;       // flip warp every 5 s
 
-  let raf = 0, active = false, startT = 0, lastFlip = 0;
+  let active = false, disabled = false, lastFlip = 0;
   let lastActivity = performance.now();
+
+  // The shared sweep driver. Attract cancels on ANY interaction via bump()
+  // below, so the autopilot's own mouse-cancel is redundant here.
+  const pilot = createAutopilot({
+    input, mode: 'sine', cancelOnMouse: false,
+    amplitude: AMP_YAW, pitchAmplitude: AMP_PITCH, period: YAW_PERIOD,
+    onTick: flipTick,
+  });
 
   const shown = (el) => !!el && el.classList.contains('show');
   // Only attract from a clean idle screen — never over the summary card, the
   // cheat-sheet, the about panel, or while the mouse is captured.
   const canStart = () =>
-    !active && !isLocked() &&
+    !active && !disabled && !isLocked() &&
+    !ctx.isBusy?.() &&                       // e.g. the presenter's autopilot
     overlay && !overlay.classList.contains('hidden') &&
     !shown(summary) && !shown(cheats) && !shown(about);
 
@@ -49,36 +65,30 @@ export function installAttract(ctx) {
       : 'Frame Warp <b>OFF</b><span>the view lags your motion at 30 FPS</span>';
   }
 
-  function tick(now) {
+  // Per-tick hook from the autopilot: flip warp every PHASE_MS.
+  function flipTick(now) {
     if (!active) return;
-    const t = (now - startT) / 1000;
-    // Smooth sweep so panning the camera makes the warp ON/OFF difference visible.
-    input.yaw = Math.sin(t * (2 * Math.PI / YAW_PERIOD)) * AMP_YAW;
-    input.pitch = Math.sin(t * (2 * Math.PI / (YAW_PERIOD * 1.7))) * AMP_PITCH;
-
     if (now - lastFlip > PHASE_MS) {
       lastFlip = now;
       setWarp(!getWarpEnabled());
       setCaption(getWarpEnabled()); // reflects the new state
     }
-    raf = requestAnimationFrame(tick);
   }
 
   function start() {
     active = true;
-    startT = performance.now();
-    lastFlip = startT;                       // hold the first (OFF) phase fully
+    lastFlip = performance.now();            // hold the first (OFF) phase fully
     if (getWarpEnabled()) setWarp(false);    // open in the "problem" state
     setCaption(false);
     document.body.classList.add('attract');
-    raf = requestAnimationFrame(tick);
+    pilot.start();
     console.log('[FrameWarp] attract mode STARTED (idle)');
   }
 
   function stop() {
     if (!active) return;
     active = false;
-    cancelAnimationFrame(raf);
+    pilot.stop();
     document.body.classList.remove('attract');
     input.yaw = 0; input.pitch = 0;          // recentre for whoever steps up
     if (getWarpEnabled()) setWarp(false);    // hand over in the honest OFF state
@@ -100,5 +110,16 @@ export function installAttract(ctx) {
     if (canStart() && performance.now() - lastActivity > IDLE_MS) start();
   }, 1000);
 
-  return { start, stop, isActive: () => active };
+  /** Switch the idle loop off (stops a running session). Presenter mode. */
+  function disable() {
+    disabled = true;
+    stop();
+  }
+  /** Re-arm the idle loop; the idle clock restarts from now. */
+  function enable() {
+    disabled = false;
+    lastActivity = performance.now();
+  }
+
+  return { start, stop, disable, enable, isActive: () => active, isEnabled: () => !disabled };
 }

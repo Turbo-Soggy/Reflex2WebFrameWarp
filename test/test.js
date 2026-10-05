@@ -42,6 +42,8 @@ import {
   foveatedPhiInverse, sCoreForExtent, CORE, coreRectPx,
 } from '../src/replay/foveation.js';
 import { fovXRad } from '../src/config.js';
+import { cropRectCss, guardUsedPct } from '../src/xray.js';
+import { CHAPTERS, PRESET_FIELDS, applyPreset } from '../src/chapters.js';
 import {
   focalPx, translationFromWalk, disparityPx, disparityUV, representativeDepth,
   residualPx, disocclusionPx, gridResidualStats, cellExtentsFromField,
@@ -724,6 +726,173 @@ test('shader twin: parallaxDeltaUV(transUVPerMeter) matches the disparity primit
   approx(Math.abs(shift[0]), disparityUV(tx, d, _halfX), 1e-12); // GPU path == measured shift
   approx(shift[1], 0, 1e-12);                                    // no vertical translation → no v shift
   approx(parallaxDeltaUV(num, 2 * d)[0], shift[0] / 2, 1e-12);   // inverse in depth, like disparity
+});
+
+// ===========================================================================
+section('Phase 2 views — LagSim freeze/step + x-ray crop rectangle');
+
+test('LagSim paused: no source frames, stepOnce lets exactly one through', () => {
+  const lag = new LagSim(30, 0);
+  assert.equal(lag.shouldRender(0), true);    // first frame
+  lag.paused = true;
+  for (let t = 40; t <= 400; t += 16) assert.equal(lag.shouldRender(t), false);
+  lag.stepOnce();
+  assert.equal(lag.shouldRender(416), true);  // the one stepped frame
+  assert.equal(lag.shouldRender(432), false); // …and only one
+  assert.equal(lag.shouldRender(800), false);
+});
+
+test('LagSim stepOnce is ignored while running', () => {
+  const lag = new LagSim(30, 0);
+  lag.shouldRender(0);
+  lag.stepOnce();                             // not paused → no-op
+  assert.equal(lag.shouldRender(10), false);  // cadence unchanged (33 ms)
+});
+
+test('LagSim resume after a long pause resyncs (one frame, no catch-up burst)', () => {
+  const lag = new LagSim(30, 0);
+  lag.shouldRender(0);
+  lag.paused = true;
+  lag.shouldRender(100);
+  lag.paused = false;
+  // 5 s later: exactly one frame, then the normal ~33 ms cadence resumes.
+  assert.equal(lag.shouldRender(5000), true);
+  assert.equal(lag.shouldRender(5001), false);
+  assert.equal(lag.shouldRender(5016), false);
+  assert.equal(lag.shouldRender(5034), true);
+});
+
+test('crop rect: delta 0 is the fixed central crop', () => {
+  const r = cropRectCss(0, 0, 0.12, 1000, 500);
+  approx(r.left, 120, 1e-9); approx(r.top, 60, 1e-9);
+  approx(r.width, 760, 1e-9); approx(r.height, 380, 1e-9);
+});
+
+test('crop rect edges equal the shader-sampled UVs (cropUV) mapped to CSS px', () => {
+  const G = 0.18, W = 1920, H = 1080, d = [-0.07, 0.05];
+  const r = cropRectCss(d[0], d[1], G, W, H);
+  const [u0, v0] = cropUV([0, 0], d, G); // bottom-left display pixel → texture UV
+  const [u1, v1] = cropUV([1, 1], d, G); // top-right display pixel → texture UV
+  approx(r.left, u0 * W, 1e-9);
+  approx(r.left + r.width, u1 * W, 1e-9);
+  approx(r.top, (1 - v1) * H, 1e-9);            // CSS top = highest V (V is up)
+  approx(r.top + r.height, (1 - v0) * H, 1e-9);
+});
+
+test('crop rect direction: yaw left (du<0) moves it left, pitch up (dv>0) moves it up', () => {
+  const c = cropRectCss(0, 0, 0.12, 1000, 1000);
+  const yawLeft = cropRectCss(-0.05, 0, 0.12, 1000, 1000);
+  const pitchUp = cropRectCss(0, 0.05, 0.12, 1000, 1000);
+  assert.ok(yawLeft.left < c.left);
+  assert.ok(pitchUp.top < c.top);
+});
+
+test('guard used %: 100 exactly when the crop edge reaches the texture edge', () => {
+  const G = 0.12, S = 1 - 2 * G;
+  approx(guardUsedPct(G / S, 0, G), 100, 1e-9);
+  approx(guardUsedPct(0, -G / (2 * S), G), 50, 1e-9);
+  approx(cropRectCss(-G / S, 0, G, 1000, 1000).left, 0, 1e-9); // left edge at x = 0
+  assert.equal(guardUsedPct(0, 0, 0), 0);
+  assert.equal(guardUsedPct(0.01, 0, 0), Infinity);            // no guard band: any shift clamps
+});
+
+section('scenario chapters (chapters.js) — full idempotent presets');
+
+// A fake system: plain state + a log of every MUTATING call, with the same
+// idempotent semantics as the real modules (views.setView etc. are no-ops when
+// unchanged; sliders / setWarp / chart resize are guarded by applyPreset).
+function fakeSystem(init = {}) {
+  const st = {
+    warp: false, hz: 30, guard: 12, lag: 150, mv: false, view: 'normal', frozen: false,
+    zones: false, ghost: true, heatmap: false, charts: false,
+    autopilot: { running: false, opts: {} }, ...init,
+  };
+  const calls = [];
+  const set = (k) => (v) => { if (st[k] !== v) calls.push(`${k}=${JSON.stringify(v)}`); st[k] = v; };
+  const sys = {
+    cancelSideShows: () => false,
+    getWarp: () => st.warp, setWarp: (v) => { calls.push(`setWarp(${v})`); st.warp = v; st.lag = v ? 50 : 150; },
+    getHz: () => st.hz, setHz: (v) => { calls.push(`setHz(${v})`); st.hz = v; },
+    getGuard: () => st.guard, setGuard: (v) => { calls.push(`setGuard(${v})`); st.guard = v; },
+    getLag: () => st.lag, setLag: (v) => { calls.push(`setLag(${v})`); st.lag = v; },
+    getMV: () => st.mv, setMV: set('mv'),
+    setView: set('view'), setFrozen: set('frozen'), setZones: set('zones'),
+    setGhost: set('ghost'), setHeatmap: set('heatmap'),
+    getCharts: () => st.charts, setCharts: (v) => { calls.push(`setCharts(${v})`); st.charts = v; },
+    autopilot: {
+      stop: () => { st.autopilot.running = false; },
+      configure: (o) => { Object.assign(st.autopilot.opts, o); },
+      start: () => { st.autopilot.running = true; },
+    },
+    later: (fn) => { fn(); return 1; }, // the deferred freeze runs at once here
+  };
+  const snapshot = () => JSON.parse(JSON.stringify(st));
+  return { sys, calls, snapshot };
+}
+
+test('nine chapters, keys 1..9 in order', () => {
+  assert.deepEqual(CHAPTERS.map((c) => c.key), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+});
+
+test('every chapter defines every preset field (no undefined leaks)', () => {
+  for (const c of CHAPTERS) {
+    for (const f of PRESET_FIELDS) assert.notEqual(c[f], undefined, `chapter ${c.key} missing ${f}`);
+    for (const o of ['mode', 'amplitude', 'pitchAmplitude', 'period', 'smoothing']) {
+      assert.notEqual(c.autopilot[o], undefined, `chapter ${c.key} autopilot missing ${o}`);
+    }
+    assert.ok(['normal', 'sbs', 'xray'].includes(c.view), `chapter ${c.key} view`);
+  }
+});
+
+test('captions fit the lower third (title <= 70 chars, sub <= 90), never "same lag"', () => {
+  for (const c of CHAPTERS) {
+    assert.ok(c.title.length <= 70, `chapter ${c.key} title is ${c.title.length} chars`);
+    assert.ok(c.sub.length <= 90, `chapter ${c.key} sub is ${c.sub.length} chars`);
+    assert.ok(!/same lag/i.test(c.title + ' ' + c.sub), `chapter ${c.key} says "same lag"`);
+  }
+});
+
+test('applying a preset twice is a no-op (same state, no mutating calls)', () => {
+  for (const c of CHAPTERS) {
+    const { sys, calls, snapshot } = fakeSystem();
+    applyPreset(sys, c);
+    const once = snapshot();
+    calls.length = 0;
+    applyPreset(sys, c);
+    assert.deepEqual(snapshot(), once, `chapter ${c.key} state changed on re-apply`);
+    // Only the documented reset step (a non-normal view / freeze / zones going
+    // off and straight back on) may touch anything; sliders, warp, MV, charts,
+    // ghost and heat map must not move.
+    const extra = calls.filter((s) => !/^(view|frozen|zones)=/.test(s));
+    assert.deepEqual(extra, [], `chapter ${c.key} re-apply made calls: ${extra.join(', ')}`);
+  }
+});
+
+test('jumping 7 -> 2 -> 7, and X -> Y for every pair, lands on identical state', () => {
+  const byKey = (k) => CHAPTERS.find((c) => c.key === k);
+  const a = fakeSystem();
+  applyPreset(a.sys, byKey(7));
+  const s7 = a.snapshot();
+  applyPreset(a.sys, byKey(2));
+  applyPreset(a.sys, byKey(7));
+  assert.deepEqual(a.snapshot(), s7);
+  for (const target of CHAPTERS) {
+    const ref = fakeSystem(); applyPreset(ref.sys, target);
+    for (const from of CHAPTERS) {
+      const f = fakeSystem(); applyPreset(f.sys, from); applyPreset(f.sys, target);
+      assert.deepEqual(f.snapshot(), ref.snapshot(), `${from.key} -> ${target.key}`);
+    }
+  }
+});
+
+test('lag: chapter 1 is explicitly 0 and chapter 2 explicitly 150; the rest leave it to setWarp', () => {
+  // Chapter 1 promises "no added lag" with warp off, which the W coupling would
+  // otherwise leave at 150. Chapter 2 must restore 150 explicitly because
+  // coming from chapter 1 (warp already off) setWarp is not re-run.
+  for (const c of CHAPTERS) {
+    const want = c.key === 1 ? 0 : c.key === 2 ? 150 : null;
+    assert.equal(c.lag, want, `chapter ${c.key}`);
+  }
 });
 
 // ===========================================================================

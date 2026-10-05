@@ -33,6 +33,13 @@ export class LagSim {
 
     this._lastRenderTime = -Infinity;
 
+    // Freeze / step (Phase 2): while paused no new source frames are produced
+    // (the warp keeps compositing the last one); stepOnce() lets exactly one
+    // through. On resume the catch-up guard in shouldRender() resyncs to now,
+    // so the pause does not come out as a burst of frames.
+    this.paused = false;
+    this._stepPending = false;
+
     // Ring buffer of { t, yaw, pitch } orientation snapshots.
     this.history = [];
     this.maxHistoryMs = 1000; // keep at most ~1s of history
@@ -61,6 +68,13 @@ export class LagSim {
    * to 30 FPS even though individual frames jitter by a tick.
    */
   shouldRender(now) {
+    if (this.paused) {
+      if (!this._stepPending) return false;
+      this._stepPending = false;
+      this._lastRenderTime = now; // resume cadence from the stepped frame
+      return true;
+    }
+    this._stepPending = false; // a step requested just before resume is moot
     if (now - this._lastRenderTime >= this.renderInterval) {
       this._lastRenderTime += this.renderInterval;
       // If we've fallen far behind (tab was backgrounded, a long stall), don't
@@ -89,6 +103,11 @@ export class LagSim {
       else break;
     }
     return chosen;
+  }
+
+  /** While paused, allow exactly one more source frame on the next tick. */
+  stepOnce() {
+    if (this.paused) this._stepPending = true;
   }
 
   /** Change the source frame-rate cap at runtime (used by the parameter panel). */

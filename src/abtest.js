@@ -33,7 +33,7 @@ export function installABTest(ctx) {
   const offCanvas = document.getElementById('ab-canvas-off');
   const onCanvas = document.getElementById('ab-canvas-on');
   if (!banner || !overlay || !result || !offCanvas || !onCanvas) {
-    return { toggle() {}, isActive: () => false };
+    return { toggle() {}, cancel() {}, isActive: () => false };
   }
   const offCtx = offCanvas.getContext('2d');
   const onCtx = onCanvas.getContext('2d');
@@ -154,6 +154,8 @@ export function installABTest(ctx) {
 
   return {
     toggle() { (phase === 'idle') ? start() : cancel(); },
+    /** Close a running block or replay (no-op when idle). Leaves warp as-is. */
+    cancel() { if (phase !== 'idle') cancel(); },
     isActive: () => phase !== 'idle',
   };
 }

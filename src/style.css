@@ -943,3 +943,400 @@ kbd {
   border-radius: 4px;
   padding: 1px 6px;
 }
+
+/* --- Phase 2 views --- */
+/* Mechanism views (views.js / xray.js): side-by-side (S), x-ray (V),
+   freeze (Space / .), guard-band zone tint (Z). All hidden by default; the
+   body classes .sbs / .xray / .frozen / .zones switch them on. */
+
+/* Side by side: the canvas is letterboxed (each half is W/2 x H/2, centred
+   vertically), so the crosshairs sit at the centre of each half. */
+#sbs-overlay { display: none; position: fixed; inset: 0; z-index: 8; pointer-events: none; }
+body.sbs #sbs-overlay { display: block; }
+body.sbs #crosshair { display: none; }
+/* The views need the screen: the chart panel and play hint would sit on the
+   letterboxed halves / the x-ray labels. */
+body.sbs #chart-panel, body.xray #chart-panel,
+body.sbs #play-hint, body.xray #play-hint,
+body.xray #scoreboard { display: none; } /* shooting is off in x-ray; frees the readout */
+#crosshair-left { left: 25%; }
+#crosshair-right { left: 75%; }
+.sbs-divider {
+  position: absolute; left: 50%; top: 25%; height: 50%; width: 2px;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.8);
+}
+/* Labels sit in the BOTTOM letterbox bar (the top bar has the HUD and the
+   parameter panel in its corners). */
+.sbs-label {
+  position: absolute; top: calc(75% + 14px); width: 50%;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: clamp(14px, 1.8vw, 28px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #fff;
+}
+.sbs-left { left: 0; color: #ff9a80; }
+.sbs-right { left: 50%; color: #7fd4ff; }
+#sbs-warp-note {
+  margin-top: 6px;
+  font-size: clamp(11px, 1vw, 16px);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: #7fd4ff;
+  opacity: 0.85;
+}
+#sbs-warp-note.off { color: #ffd166; }
+
+/* X-ray: SVG geometry in CSS px (no viewBox), labels positioned by transform. */
+#xray-overlay { display: none; position: fixed; inset: 0; z-index: 7; pointer-events: none; }
+#xray-overlay.show { display: block; }
+body.xray #crosshair { display: none; }
+#xray-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+#xray-shade { fill: rgba(0, 0, 0, 0.30); }
+#xray-rect-off {
+  fill: none; stroke: #ff9a80; stroke-width: 2; stroke-dasharray: 10 7; opacity: 0.55;
+}
+#xray-rect-on { fill: none; stroke: #4cc2ff; stroke-width: 3; opacity: 0.55; }
+#xray-overlay:not(.warp-on) #xray-rect-off { opacity: 1; stroke-width: 3; }
+#xray-overlay.warp-on #xray-rect-on { opacity: 1; }
+#xray-arrow { stroke: #ffd166; stroke-width: 2.5; }
+#xray-dot-then { fill: #ff9a80; stroke: #000; stroke-width: 1.5; }
+#xray-dot-now { fill: #4cc2ff; stroke: #000; stroke-width: 1.5; }
+.xray-label {
+  position: absolute; left: 0; top: 0;
+  font-family: var(--mono);
+  font-size: clamp(12px, 1.1vw, 18px);
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.62);
+  will-change: transform;
+}
+#xray-label-off { color: #ff9a80; }
+#xray-label-on { color: #7fd4ff; }
+#xray-label-then { color: #ff9a80; }
+#xray-label-now { color: #7fd4ff; }
+#xray-title {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: clamp(12px, 1.2vw, 18px);
+  letter-spacing: 0.14em; color: #fff;
+  background: rgba(0, 0, 0, 0.6); padding: 4px 12px; border-radius: 6px;
+}
+#xray-readout {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  white-space: nowrap;
+  display: grid; grid-template-columns: repeat(4, auto); gap: 4px 26px;
+  font-family: var(--mono); font-size: clamp(13px, 1.3vw, 22px);
+  background: rgba(8, 10, 14, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px; padding: 10px 18px;
+  font-variant-numeric: tabular-nums;
+}
+#xray-readout span { color: var(--muted); margin-right: 10px; }
+#xray-readout b { color: #fff; font-weight: 600; }
+#xray-readout b.over { color: #ff5c6c; }
+.xray-r-mode { grid-column: 1 / -1; text-align: center; color: #ffd166; font-size: 0.8em; }
+
+/* Guard-band zone legend (Z). */
+#zones-legend {
+  display: none; position: fixed; left: 50%; bottom: 16px; z-index: 10;
+  transform: translateX(-50%); white-space: nowrap;
+  font-family: var(--mono); font-size: 12px; line-height: 1.7;
+  background: var(--panel); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 10px;
+  padding: 10px 14px; pointer-events: none;
+}
+body.zones #zones-legend { display: block; }
+body.xray #zones-legend { bottom: 92px; } /* above the x-ray readout */
+.zl-title { color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; font-size: 10px; }
+.zl-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 8px; vertical-align: -2px; }
+.zl-cyan { background: #00ffff; opacity: 0.7; }
+.zl-red { background: #ff0000; opacity: 0.8; }
+
+/* Freeze badge (Space). */
+#freeze-badge {
+  display: none; position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
+  z-index: 12; pointer-events: none;
+  font-family: var(--mono); font-size: clamp(11px, 1vw, 18px); letter-spacing: 0.08em;
+  color: #0b0d12; background: #ffd166;
+  padding: 6px 14px; border-radius: 6px; white-space: nowrap;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+#freeze-badge kbd { color: #0b0d12; border-color: rgba(0, 0, 0, 0.3); background: rgba(0, 0, 0, 0.08); }
+body.frozen #freeze-badge { display: block; }
+
+/* --- Presenter mode --- */
+/* Phase 1 (presenter.js). body.present is set by ?present or the P key. Every
+   rule here is either scoped to body.present or styles an element that only
+   presenter.js drives, so the normal demo is unchanged. */
+
+/* Unlocked overlay: no card, no dimming — the scene stays visible while the
+   presenter talks with the mouse free. Clicking still takes the mouse. */
+body.present #overlay { background: transparent; backdrop-filter: none; }
+body.present .overlay-card { display: none; }
+body.present #play-hint { display: none; }
+#present-hint { display: none; }
+body.present #present-hint {
+  display: block;
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: rgba(8, 10, 14, 0.55);
+  border-radius: 6px;
+  padding: 4px 10px;
+  pointer-events: none;
+}
+
+/* Permanent WARP ON / OFF badge, top-centre, high contrast for a projector. */
+#present-badge {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 27;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  padding: 10px 24px;
+  border-radius: 10px;
+  border: 3px solid currentColor;
+  background: rgba(6, 8, 12, 0.88);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+#present-badge.on  { color: #5fd0ff; }
+#present-badge.off { color: #ff8a6e; }
+body.present #present-badge { display: block; }
+
+/* "Last key" caption under the badge (presenter.caption(text), ~1.5 s). */
+#present-caption {
+  display: none;
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 27;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(6, 8, 12, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 6px 16px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+body.present #present-caption { display: block; }
+#present-caption.show { opacity: 1; }
+/* Keep the Phase 2 freeze badge clear of the badge + caption stack. */
+body.present #freeze-badge { top: 122px; }
+
+/* Presenter collisions (Phase 3 fixes):
+   (a) the WARP badge (top 12..~70 px) sat on the x-ray title -> title moves
+       just under the badge, smaller; the "last key" caption covers it briefly.
+   (b) the freeze badge sat on the x-ray crop's top edge -> in x-ray it is
+       compact, takes the title's slot (title hidden while frozen).
+   (c) the click hint sat on the x-ray readout / sbs labels -> hidden there. */
+body.present.xray #xray-title { top: 78px; font-size: 14px; padding: 3px 10px; letter-spacing: 0.1em; }
+body.present.xray.frozen #xray-title { display: none; }
+body.xray #freeze-badge { top: 50px; font-size: 11px; padding: 4px 10px; letter-spacing: 0.02em; }
+body.present.xray #freeze-badge { top: 78px; }
+body.present.xray #present-hint,
+body.present.sbs #present-hint { display: none; }
+
+/* True-aim ghost reticle: a hollow green ring, deliberately unlike the white
+   cross. Positioned each frame by presenter.js via transform (offset from the
+   screen centre); hidden outside the single normal view. */
+#true-aim {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 8;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 3px solid #7cffb2;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(0, 0, 0, 0.6),
+              0 0 14px rgba(124, 255, 178, 0.45);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  will-change: transform;
+}
+#true-aim span {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #7cffb2;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+body.present #true-aim span { font-size: 16px; }
+#true-aim.show { display: block; }
+#true-aim.suppressed,
+body.sbs #true-aim,
+body.xray #true-aim { display: none; }
+
+/* Text scale for the room: HUD, scoreboard, chart titles and the parameter
+   panel all at >= 18 px. Panels grow rather than wrap. */
+body.present #hud { font-size: 18px; min-width: 330px; padding: 14px 16px; }
+body.present .statline { font-size: 22px; }
+body.present .chart-title { font-size: 18px; }
+body.present .chart-legend { font-size: 16px; }
+body.present .chart-note { display: none; }
+body.present #param-panel { font-size: 18px; width: 320px; }
+body.present .param-title { font-size: 18px; }
+body.present .heatmap-title,
+body.present .heatmap-legend { font-size: 16px; }
+body.present #lag-banner,
+body.present #ab-banner { font-size: 22px; }
+
+/* --- Chapters (Phase 3) --- */
+/* chapters.js: body.chapters is set while a scenario chapter is playing; all of
+   it is gated on body.present too, so the normal demo is unchanged. The dock
+   (click hint, "you are here" strip, lower-third caption) is one bottom-centre
+   column; chapters.js publishes its height as --dock-h so the scoreboard, the
+   zones legend and the x-ray readout can sit just above it at any size. */
+:root { --dock-h: 0px; }
+#chapter-dock { display: none; }
+body.present.chapters #chapter-dock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  z-index: 26; /* above the transparent click overlay (20) */
+  pointer-events: none;
+}
+.cd-hint {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: rgba(8, 10, 14, 0.55);
+  border-radius: 6px;
+  padding: 3px 10px;
+}
+#overlay.hidden ~ #chapter-dock .cd-hint,
+body.xray .cd-hint, body.sbs .cd-hint { display: none; }
+
+#chapter-strip { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.cs-pill {
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1;
+  color: rgba(231, 236, 243, 0.62);
+  background: rgba(8, 10, 14, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 5px 11px 5px 5px;
+  white-space: nowrap;
+}
+.cs-pill b {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  font-size: 13px; font-weight: 800;
+  background: rgba(255, 255, 255, 0.12); color: #fff;
+}
+.cs-pill.done { color: rgba(231, 236, 243, 0.8); }
+.cs-pill.active {
+  color: #0b0d12;
+  background: #ffd166;
+  border-color: #ffd166;
+  font-weight: 700;
+  box-shadow: 0 0 18px rgba(255, 209, 102, 0.45);
+}
+.cs-pill.active b { background: #0b0d12; color: #ffd166; }
+
+/* Lower third: >= 26 px title, >= 18 px "say this" line. */
+#chapter-caption {
+  text-align: center;
+  max-width: min(1200px, calc(100vw - 32px));
+  background: rgba(6, 8, 12, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-left: 5px solid #ffd166;
+  border-radius: 10px;
+  padding: 10px 24px 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+}
+.cc-title { font-size: 30px; font-weight: 800; line-height: 1.2; color: #fff; letter-spacing: -0.01em; }
+.cc-sub { margin-top: 4px; font-size: 20px; line-height: 1.3; color: #cdd6e3; }
+#chapter-caption.enter { animation: chapter-in 0.35s ease-out; }
+@keyframes chapter-in {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@media (max-height: 800px) {
+  .cc-title { font-size: 27px; }
+  .cc-sub { font-size: 18px; }
+  #chapter-caption { padding: 8px 20px 10px; }
+}
+
+/* Chapter layout: nothing may sit under the dock. The small chart panel is
+   off during chapters (chapter 9 expands it); the scoreboard and the zones
+   legend move above the dock; the click hint lives inside the dock. */
+body.present.chapters #present-hint { display: none; }
+body.present.chapters #chart-panel:not(.expanded) { display: none; }
+body.present.chapters #scoreboard { bottom: calc(var(--dock-h) + 12px); }
+body.present.chapters #zones-legend {
+  left: 16px; transform: none;
+  bottom: calc(var(--dock-h) + 12px);
+  font-size: 16px;
+}
+body.present.chapters #zones-legend .zl-title { font-size: 13px; }
+body.present.chapters #xray-readout { bottom: calc(var(--dock-h) + 8px); }
+body.present.chapters.xray #zones-legend { bottom: calc(var(--dock-h) + 130px); }
+/* Expanded charts (chapter 9): centre in the free band between the warp badge
+   (~70 px) and the dock top; scale down on short screens. */
+body.present.chapters #chart-panel.expanded {
+  top: calc((100vh - var(--dock-h) + 70px) / 2);
+}
+body.present #chart-panel.expanded .chart-title { font-size: 20px; }
+@media (max-height: 900px) {
+  body.present.chapters #chart-panel.expanded { transform: translate(-50%, -50%) scale(0.72); }
+}
+/* Side by side: the bottom letterbox bar belongs to the dock, so the half
+   labels move up into the bottom edge of each image. */
+body.present.chapters .sbs-label {
+  top: auto;
+  bottom: calc(25% + 10px);
+  text-shadow: 0 2px 8px #000, 0 0 3px #000, 0 0 1px #000;
+}
+
+/* Side by side: shooting is locked there, and the half labels now sit where
+   the scoreboard would be; expanded charts (chapter 9) already plot the hit
+   rate and would sit on the scoreboard on short screens. */
+body.present.chapters.sbs #scoreboard,
+body.present.chapters:has(#chart-panel.expanded) #scoreboard { display: none; }

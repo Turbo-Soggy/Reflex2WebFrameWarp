@@ -1,11 +1,15 @@
 /* ---------------------------------------------------------------------------
    shooter.js — Click-to-shoot: hit detection + feedback
    ---------------------------------------------------------------------------
-   Single fullscreen viewport: one click fires ONE shot, from the orientation the
-   screen is currently DISPLAYING. With warp ON the screen is reprojected to the
-   current orientation, so the crosshair points where you're aiming NOW → hit.
-   With warp OFF the screen shows the lagged orientation, so the crosshair points
-   where you WERE aiming ~95 ms ago → miss while you're tracking a moving target.
+   Single fullscreen viewport. One click fires ONE ray, always along the CURRENT
+   input aim (where the gun points now), and always tests it against the targets
+   as the DISPLAYED frame shows them (their positions at the frame's world time,
+   plus the motion-vector extrapolation when M is on). Both modes use the same
+   rule, so the only thing that differs between warp ON and OFF is what the
+   screen centre shows: with warp ON the image is reprojected to the current aim,
+   so the crosshair sits on what the ray tests -> hit; with warp OFF the image is
+   the raw frame drawn from the LAGGED orientation, so the crosshair sits on a
+   direction the gun no longer points at -> miss while tracking.
    The result is scored into the matching mode bucket so the comparison persists.
 
    This module owns the shooting; main.js keeps the app state and passes it in via
@@ -27,7 +31,8 @@ const _dir = new THREE.Vector3();
 
 /**
  * @param {object} ctx
- *   refs:     input, warpTarget, targets, camera, scoreboard, clock
+ *   refs:     input, warpTarget (renderedYaw/renderedPitch), targets, camera,
+ *             scoreboard, clock
  *   getters:  getWarpEnabled, getMotionVectorsOn, getLastRenderedElapsed,
  *             getLastRenderWallTime
  * @returns {{ fire: () => void }}
@@ -50,21 +55,44 @@ export function createShooter(ctx) {
     const yaw = ctx.input.yaw;
     const pitch = ctx.input.pitch;
 
-    // renderedYaw is from ~lagMs ago, so |current − rendered| is large while
-    // tracking and ~0 when stationary. Apply lag compensation (hit-test against
-    // the displayed lagged frame) only when warp is on AND you're tracking;
-    // otherwise test against the true current world (an ambush shot misses).
-    const isTracking = Math.abs(yaw - ctx.warpTarget.renderedYaw) > 0.01;
-    const hitTime = (ctx.getWarpEnabled() && isTracking)
-      ? ctx.getLastRenderedElapsed()
-      : ctx.clock.getElapsedTime();
+    // HIT-TEST RULE (identical for warp ON and OFF):
+    //   ray     = current input aim (yaw, pitch): the gun points where the hand is NOW.
+    //   targets = where the DISPLAYED frame shows them: rewound to that frame's
+    //             world time (lastRenderedElapsed), plus velocity x dt when M is on.
+    //
+    // Why warp OFF still misses while tracking (geometry):
+    //   The crosshair is a DOM element fixed at screen centre. With warp OFF the
+    //   frame is composited with delta 0, so the screen-centre pixel shows the
+    //   direction of the frame's camera, i.e. the LAGGED orientation
+    //   (renderedYaw, renderedPitch). Centring the target under the crosshair
+    //   therefore puts the displayed target on the lagged direction. The ray,
+    //   however, leaves along the current aim, which differs from the lagged
+    //   one by exactly (dYaw, dPitch) = fresh - rendered (the same delta the warp
+    //   shader would apply). Rewinding the targets does NOT remove that offset:
+    //   it only makes the tested target equal the displayed one, so the miss
+    //   distance is purely the camera-rotation latency, roughly
+    //   angular tracking speed x (injected lag + frame age).
+    //   With warp ON the image is shifted by that same delta, so the screen
+    //   centre shows the current aim; the displayed target under the crosshair
+    //   IS on the ray -> hit. Stationary aim: delta ~ 0, both modes hit.
+    //
+    //   (Before this change, warp OFF tested the targets at the PRESENT time.
+    //   Because main.js lags the whole frame, camera AND targets, by lagMs, a
+    //   steady tracker's hand ends up roughly in phase with the present target,
+    //   so that rule partly cancelled the view error it was meant to expose, and
+    //   the two modes tested different target positions. Now both modes test
+    //   the displayed positions and only the view direction differs.)
+    const hitTime = ctx.getLastRenderedElapsed();
+    ctx.targets.update(hitTime); // also stores each target's velocity at hitTime
 
-    ctx.targets.update(hitTime);
-
-    // Motion-vector-aware hit test: when M is on, shift each tested target by the
-    // SAME velocity × dt the warp shader applies to the DISPLAY (dt = age of the
-    // source frame, identical to the shader's uDeltaTime). Keeps "what you see =
-    // what you hit", so W's accuracy holds when M is also on.
+    // Motion vectors: when M is on, the shader shifts moving targets on screen by
+    // velocity x dt (dt = age of the source frame, the same value main.js passes
+    // as uDeltaTime) in BOTH warp modes, so the displayed target is the rewound
+    // position plus that extrapolation, and that is what gets tested. Known
+    // approximation: the shader clamps the per-pixel shift at
+    // MAX_VEL_CONTRIBUTION (0.015 UV). At 30 FPS source frames the shift stays
+    // under it; at 10 FPS (Shift+M) late in a frame it can bind, and then the
+    // tested target leads the drawn one slightly. This is not clamped here.
     if (ctx.getMotionVectorsOn()) {
       const dt = Math.max(0, (performance.now() - ctx.getLastRenderWallTime()) / 1000);
       const vels = ctx.targets.getVelocities();
@@ -74,18 +102,22 @@ export function createShooter(ctx) {
     }
     ctx.targets.group.updateMatrixWorld(true);
 
+    // Snapshot the tested (= displayed) world positions for the A/B aim capture.
+    const tested = ctx.targets.meshes.map((m) => m.getWorldPosition(new THREE.Vector3()));
+
     const hit = shoot(ctx.camera.position, yaw, pitch, ctx.targets.meshes);
 
-    // Restore targets to the displayed (lagged) positions so the loop doesn't stutter.
+    // Restore targets to the rendered-frame positions (drops the MV offset) so
+    // the loop doesn't stutter.
     ctx.targets.update(ctx.getLastRenderedElapsed());
+    ctx.targets.group.updateMatrixWorld(true);
 
     // --- Aim geometry for the A/B replay (§3A/§3B) -------------------------
-    // Project, into the crosshair's own frame, WHERE THE TARGET LOOKED (the
-    // displayed/lagged position you tracked) vs WHERE IT REALLY WAS (the true
-    // current position the ray was tested against). Warp OFF: a gap opens
-    // between them — "looked dead-on, missed". Warp ON: they coincide — "hit".
-    // Derived from the same positions the hit test used; purely read-only.
-    const aim = captureAim(ctx, yaw, pitch, hit, hitTime);
+    // The SAME tested target, projected through two cameras: the one the screen
+    // was DISPLAYING (where the target looked relative to the crosshair) and the
+    // current aim (where it really was relative to the ray). Warp OFF: a gap
+    // opens, "looked dead-on, missed". Warp ON: they coincide. Read-only.
+    const aim = captureAim(ctx, yaw, pitch, hit, tested);
 
     ctx.scoreboard.registerShot(ctx.getWarpEnabled(), !!hit);
 
@@ -115,7 +147,9 @@ export function createShooter(ctx) {
   }
 
   document.addEventListener('mousedown', (e) => {
-    if (!ctx.input.locked || e.button !== 0) return;
+    // Mechanism views (side-by-side / x-ray / freeze) lock shooting: their
+    // displayed frame is not the honest single-viewport hit-test condition.
+    if (!ctx.input.locked || e.button !== 0 || ctx.canShoot?.() === false) return;
     const now = performance.now();
     if (now - lastShot < SHOOT_COOLDOWN_MS) return;
     lastShot = now;
@@ -125,41 +159,38 @@ export function createShooter(ctx) {
   return { fire };
 }
 
-/* Project, into the crosshair frame, the target as you SAW it (the displayed /
-   lagged position you tracked) vs the target the ray was actually TESTED against
-   (its position at `hitTime`). Those two times are what decide hit vs miss:
-     • warp ON + tracking → hitTime is the displayed time, so the two coincide
-       and the shot lands ("hit as expected").
-     • warp OFF → hitTime is the true current time, so the tested target has
-       drifted off your aim — the gap is the miss ("looked dead-on, missed").
-   Returns NDC offsets [-1..1] and the angular miss (deg). Samples by re-running
-   the pure target update at each time, then restores the displayed time the
-   render loop expects. */
-function captureAim(ctx, yaw, pitch, hit, hitTime) {
-  const tm = hit || ctx.targets.meshes[0];
-  if (!tm) return null;
+/* Project the tested target (the one hit, else the first) into the crosshair
+   frame twice:
+     - displayed: through the orientation the compositor showed at screen centre.
+       Warp OFF composites with delta 0, so that is the frame's own (lagged)
+       orientation; warp ON shifts by fresh - rendered, so it is the current aim.
+     - actual: through the current aim, the direction the ray was fired along.
+   The target position is the same in both (the displayed = tested position), so
+   any gap between them is pure view-direction latency. Returns NDC offsets
+   [-1..1] and the angular miss (deg) between the ray and the tested target. */
+function captureAim(ctx, yaw, pitch, hit, tested) {
+  const idx = hit ? ctx.targets.meshes.indexOf(hit) : 0;
+  const world = tested[idx];
+  if (!world) return null;
 
-  // Throwaway camera at the DISPLAY FOV and the live aspect, oriented to the
-  // freshest aim — projecting through it matches what the crosshair sees.
+  const warpOn = ctx.getWarpEnabled();
+  const dispYaw = warpOn ? yaw : ctx.warpTarget.renderedYaw;
+  const dispPitch = warpOn ? pitch : ctx.warpTarget.renderedPitch;
+
   _aimCam.position.copy(ctx.camera.position);
   _aimCam.aspect = ctx.camera.aspect;
-  _aimCam.quaternion.setFromEuler(_euler.set(pitch, yaw, 0));
-  _aimCam.updateMatrixWorld(true);
   _aimCam.updateProjectionMatrix();
 
-  const dispT = ctx.getLastRenderedElapsed(); // the shown (lagged) frame's time
+  _aimCam.quaternion.setFromEuler(_euler.set(dispPitch, dispYaw, 0));
+  _aimCam.updateMatrixWorld(true);
+  const d = world.clone().project(_aimCam);
 
-  ctx.targets.update(dispT); ctx.targets.group.updateMatrixWorld(true);
-  const dispWorld = tm.getWorldPosition(new THREE.Vector3());
-  ctx.targets.update(hitTime); ctx.targets.group.updateMatrixWorld(true);
-  const testWorld = tm.getWorldPosition(new THREE.Vector3());
-  ctx.targets.update(dispT); ctx.targets.group.updateMatrixWorld(true); // restore
+  _aimCam.quaternion.setFromEuler(_euler.set(pitch, yaw, 0));
+  _aimCam.updateMatrixWorld(true);
+  const a = world.clone().project(_aimCam);
 
-  const d = dispWorld.clone().project(_aimCam);
-  const a = testWorld.clone().project(_aimCam);
-
-  _fwd.set(0, 0, -1).applyEuler(_euler);                       // fresh forward (crosshair)
-  _dir.copy(testWorld).sub(ctx.camera.position).normalize();   // to the tested target
+  _fwd.set(0, 0, -1).applyEuler(_euler);                       // current aim (the ray)
+  _dir.copy(world).sub(ctx.camera.position).normalize();       // to the tested target
   const errDeg = THREE.MathUtils.radToDeg(
     Math.acos(Math.max(-1, Math.min(1, _fwd.dot(_dir)))));
 

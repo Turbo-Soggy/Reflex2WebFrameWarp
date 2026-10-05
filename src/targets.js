@@ -7,11 +7,13 @@
    lagged view actually matters, so it's what makes you miss without warp and
    hit with it, naturally and without the judge needing the theory.
 
-   Honesty detail: positions are a pure function of time and are advanced ONLY
-   on the 30 FPS render tick (main.js calls update() inside the render block).
-   That keeps the ray-tested position identical to the DISPLAYED position, so
-   the warp side has no hidden target-motion error — the only thing that can
-   cause a miss is camera-rotation latency, which is exactly what the warp fixes.
+   Honesty detail: positions are a pure function of time. main.js advances them
+   ONLY on the 30 FPS render tick, to the frame's lagged world time (the whole
+   frame is stale, camera and targets alike), and records that time as
+   lastRenderedElapsed. When a shot is fired, shooter.js re-evaluates update()
+   at that same time (in both warp modes), so the ray-tested position is exactly
+   the DISPLAYED position, then restores it. The only thing left that can cause
+   a miss is camera-rotation latency, which is exactly what the warp fixes.
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';

@@ -42,6 +42,10 @@ export function createWarpMaterial() {
       uDeltaTime: { value: 0.0 },              // seconds since the source frame was rendered
       uMotionVectors: { value: 0.0 },          // 0 = off, 1 = on
       uTexelSize: { value: new THREE.Vector2(1 / 1024, 1 / 1024) }, // 1 / scene-texture size
+      // --- Phase 2 diagnostic: guard-band zone tint (Z key) ---
+      uShowZones: { value: 0.0 },              // 0 = off (exact pass-through), 1 = tint zones
+      // --- presenter mode: projector display gain (1 = exact pass-through) ---
+      uExposure: { value: 1.0 },
     },
 
     // Full-screen triangle/quad: position already spans clip space [-1,1],
@@ -64,7 +68,31 @@ export function createWarpMaterial() {
       uniform float uDeltaTime;
       uniform float uMotionVectors;
       uniform vec2 uTexelSize;
+      uniform float uShowZones;
+      uniform float uExposure;
       varying vec2 vUv;
+
+      // Guard-band zone tint (diagnostic, Z key). Classifies the CAMERA sample
+      // point (before the object shift and before the clamp):
+      //   red  (55%) : camSample left [0,1]  → the margin is exhausted, the clamp
+      //                stretched the edge texel (the large-motion fallback);
+      //   cyan (35%) : inside [0,1] but outside the central crop
+      //                [uGuard, 1-uGuard] → real pixels pulled from the margin;
+      //   none       : inside the central crop (what warp-off would show too).
+      // uShowZones = 0 returns the colour untouched, so off is an exact no-op.
+      // Also applies the presenter-mode display gain (uExposure, 1.0 = no-op)
+      // here, so main() keeps its single early return (see the ANGLE note).
+      vec4 zoneTint(vec4 c, vec2 camSample) {
+        c.rgb *= uExposure;
+        if (uShowZones < 0.5) return c;
+        if (any(lessThan(camSample, vec2(0.0))) || any(greaterThan(camSample, vec2(1.0)))) {
+          return vec4(mix(c.rgb, vec3(1.0, 0.0, 0.0), 0.55), c.a);
+        }
+        if (any(lessThan(camSample, vec2(uGuard))) || any(greaterThan(camSample, vec2(1.0 - uGuard)))) {
+          return vec4(mix(c.rgb, vec3(0.0, 1.0, 1.0), 0.35), c.a);
+        }
+        return c;
+      }
 
       // Trust motion vectors only up to a small displacement (~12px @ 1080p).
       // Beyond this — high lag / low FPS — extrapolation overshoots and tears, so
@@ -91,7 +119,12 @@ export function createWarpMaterial() {
         // Motion vectors off → objShift is 0, so warpedColor is already the
         // centre of its own 3x3 neighbourhood and the de-ghost clamp below is a
         // provable no-op. Skip its 8 extra texture fetches.
-        if (uMotionVectors < 0.5) { gl_FragColor = warpedColor; return; }
+        // zoneTint() is the identity when the Z tint is off (uShowZones = 0), so
+        // this is still the original early-out. NOTE: keep a SINGLE early return
+        // here — a second "if (...) { ...; return; }" before the de-ghost loop
+        // makes ANGLE's D3D11 backend fail to link the program (empty log),
+        // verified on Chrome/Windows (Intel Arc, D3D11).
+        if (uMotionVectors < 0.5) { gl_FragColor = zoneTint(warpedColor, camSample); return; }
 
         // 3) DE-GHOSTING (neighborhood color clamping). Constrain the reprojected
         //    color to the min/max AABB of the 3x3 neighborhood at the CURRENT
@@ -111,7 +144,7 @@ export function createWarpMaterial() {
           }
         }
 
-        gl_FragColor = clamp(warpedColor, minColor, maxColor);
+        gl_FragColor = zoneTint(clamp(warpedColor, minColor, maxColor), camSample); // zoneTint: identity when off
       }
     `,
 

@@ -57,6 +57,64 @@
        and fixed (the "UI masking" idea — UI is composited after the warp). -->
   <div id="crosshair" class="crosshair"></div>
 
+  <!-- True-aim ghost reticle (presenter.js, key J): where the hand is aiming NOW,
+       placed in the image the screen is currently showing. Warp off: it runs
+       ahead of the crosshair while tracking. Warp on: it sits on the crosshair. -->
+  <div id="true-aim"><span>aim now</span></div>
+
+  <!-- Phase 2 mechanism views (views.js / xray.js). All hidden until their key.
+       Side by side (S): two letterboxed halves drawn from the SAME texture in one
+       frame; left = zero shift, right = the live reprojection. -->
+  <div id="sbs-overlay">
+    <div class="sbs-divider"></div>
+    <div id="crosshair-left" class="crosshair"></div>
+    <div id="crosshair-right" class="crosshair"></div>
+    <div class="sbs-label sbs-left">RAW 30 FPS FRAME</div>
+    <div class="sbs-label sbs-right">SAME FRAME · REPROJECTED TO NOW
+      <div id="sbs-warp-note"></div></div>
+  </div>
+
+  <!-- X-ray (V): the whole wide-FOV texture, with the crop the warp shader
+       samples drawn over it (geometry derivation in src/xray.js). -->
+  <div id="xray-overlay">
+    <svg id="xray-svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="xray-arrowhead" viewBox="0 0 10 10" refX="9" refY="5"
+                markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0L10 5L0 10z" fill="#ffd166" />
+        </marker>
+      </defs>
+      <path id="xray-shade" fill-rule="evenodd" />
+      <rect id="xray-rect-off" />
+      <rect id="xray-rect-on" />
+      <line id="xray-arrow" marker-end="url(#xray-arrowhead)" />
+      <circle id="xray-dot-then" r="6" />
+      <circle id="xray-dot-now" r="6" />
+    </svg>
+    <div id="xray-label-off" class="xray-label">warp off: crop never moves</div>
+    <div id="xray-label-on" class="xray-label">warp on: crop follows the fresh input</div>
+    <div id="xray-label-then" class="xray-label xray-mark">frame rendered aiming here</div>
+    <div id="xray-label-now" class="xray-label xray-mark">aiming here now</div>
+    <div id="xray-title">X-RAY · the whole rendered texture, guard band included</div>
+    <div id="xray-readout">
+      <div><span>Δyaw</span><b id="xray-r-yaw">—</b></div>
+      <div><span>Δpitch</span><b id="xray-r-pitch">—</b></div>
+      <div><span>frame age</span><b id="xray-r-age">—</b></div>
+      <div><span>guard used</span><b id="xray-r-guard">—</b></div>
+      <div id="xray-r-mode" class="xray-r-mode"></div>
+    </div>
+  </div>
+
+  <!-- Guard-band zone legend (Z). -->
+  <div id="zones-legend">
+    <div class="zl-title">Guard-band zones</div>
+    <div><i class="zl-swatch zl-cyan"></i>margin: real pixels from the guard band</div>
+    <div><i class="zl-swatch zl-red"></i>clamped: margin exhausted, edge stretched</div>
+  </div>
+
+  <!-- Freeze badge (Space). -->
+  <div id="freeze-badge">SOURCE FROZEN · no new frames · warp still running · <kbd>.</kbd> step · <kbd>Space</kbd> resume</div>
+
   <!-- Hit/miss feedback ("hitmarker") flashed at the crosshair. -->
   <div id="feedback" class="feedback"></div>
 
@@ -104,7 +162,7 @@
     </label>
     <label class="param-row">
       <span>Source rate <b><span id="val-hz">30</span> FPS</b></span>
-      <input type="range" id="sl-hz" min="10" max="60" step="5" value="30" />
+      <input type="range" id="sl-hz" min="2" max="60" step="1" value="30" />
     </label>
     <label class="param-row">
       <span>Guard band <b><span id="val-guard">12</span> %</b></span>
@@ -139,7 +197,18 @@
         <li><kbd>X</kbd><span>Mute / unmute</span></li>
         <li><kbd>R</kbd> / <kbd>E</kbd><span>Record / export CSV</span></li>
         <li><kbd>T</kbd><span>Record input trace</span></li>
+        <li><kbd>S</kbd><span>Side by side (raw | reprojected)</span></li>
+        <li><kbd>V</kbd><span>X-ray: whole texture + warp crop</span></li>
+        <li><kbd>Space</kbd> / <kbd>.</kbd><span>Freeze source / step one frame</span></li>
+        <li><kbd>Z</kbd><span>Guard-band zone tint</span></li>
         <li><kbd>I</kbd><span>About / theory</span></li>
+        <li><kbd>P</kbd><span>Presenter mode (or ?present)</span></li>
+        <li><kbd>A</kbd><span>Autopilot: hands-free tracking</span></li>
+        <li><kbd>J</kbd><span>True-aim reticle</span></li>
+        <li><kbd>F</kbd><span>Fullscreen (presenter mode)</span></li>
+        <li><kbd>1</kbd>–<kbd>9</kbd><span>Scenario chapters (presenter mode)</span></li>
+        <li><kbd>PgDn</kbd> / <kbd>PgUp</kbd><span>Next / previous chapter (or → / ←)</span></li>
+        <li><kbd>0</kbd><span>Reset scores</span></li>
         <li><kbd>Esc</kbd><span>Release mouse · show summary</span></li>
         <li><kbd>?</kbd><span>Toggle this panel</span></li>
       </ul>
@@ -248,7 +317,27 @@
         track the moving target.</p>
       <p class="hint">Press <kbd>?</kbd> any time for controls</p>
     </div>
+    <!-- Presenter mode: the card is hidden and only this hint shows. -->
+    <div id="present-hint">click to take the mouse</div>
   </div>
+
+  <!-- Scenario chapters (chapters.js, keys 1-9 / PgDn / PgUp; presenter mode
+       only): a lower-third caption and a "you are here" strip, stacked at the
+       bottom centre. Kept AFTER #overlay so "#overlay.hidden ~ #chapter-dock"
+       can hide the click hint once the mouse is taken. -->
+  <div id="chapter-dock">
+    <div class="cd-hint">click to take the mouse</div>
+    <div id="chapter-strip"></div>
+    <div id="chapter-caption">
+      <div class="cc-title"></div>
+      <div class="cc-sub"></div>
+    </div>
+  </div>
+
+  <!-- Presenter mode (?present or P): a permanent warp badge and a short
+       "last key" caption, top-centre, sized for a projector. -->
+  <div id="present-badge" class="off">WARP OFF</div>
+  <div id="present-caption"></div>
 
   <script type="module" src="./src/main.js"></script>
 </body>

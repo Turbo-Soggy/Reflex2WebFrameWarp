@@ -55,6 +55,18 @@ the mouse to look around.
 | `R` | Start / stop recording latency samples |
 | `E` | Export the recorded samples as a CSV |
 | `T` | Record an input trace; stop downloads JSON for `bench/run.js` (replay system) |
+| `S` | Side by side: the raw frame (left) and the same frame reprojected to now (right) |
+| `V` | X-ray: the whole rendered texture (guard band included) with the crop the warp samples |
+| `Space` | Freeze the source (no new frames; the warp keeps running) / resume |
+| `.` | Step exactly one source frame (freezes first if running) |
+| `Z` | Guard-band zone tint: cyan = pixels from the margin, red = margin exhausted (clamped) |
+| `P` | Presenter mode (also `?present`): big WARP badge, no attract / walkthrough / summary / downloads |
+| `A` | Autopilot: hands-free tracking (real mouse motion while locked, or `A`, stops it) |
+| `F` | Fullscreen (presenter mode) |
+| `J` | True-aim ghost reticle: where the hand is aiming now, in the displayed image |
+| `1`–`9` | Scenario chapters (turns presenter mode on): baseline, problem, fix, side by side, x-ray, freeze, guard-band limits, object motion, measured latency |
+| `PgDn` / `PgUp` (or `→` / `←`) | Next / previous chapter (clicker-friendly; presenter mode) |
+| `0` | Reset the scores (both tallies + the hit-rate chart) |
 
 First entry runs a short **guided walkthrough** (feel the lag → press `W` → the
 reveal). Append `?nointro` to the URL to skip it. The slider state is mirrored
@@ -101,29 +113,43 @@ Frame Generation does:
 ### How the hit detection stays honest
 
 This is important for the thesis. The warp is a **screen-space, camera-rotation**
-reprojection — it shifts pixels by the camera's angular delta and nothing else.
-It has no target positions and no motion vectors, so it **cannot** compensate for
-target motion or disocclusion.
+reprojection: it shifts pixels by the camera's angular delta and nothing else.
+It has no target positions, so it **cannot** compensate for target motion or
+disocclusion (that is what the optional motion-vector pass, `M`, is for).
 
-So the shooter does **not** fake a win by testing against different target
-*positions* (that would imply the warp moves targets — it can't). Instead, a
-single click fires **one** ray, from the camera orientation the screen is
-currently **displaying**:
+The whole source frame is stale, not just the camera: on each 30 FPS render tick
+`main.js` draws the camera at the lagged orientation **and** the targets at the
+lagged world time (`elapsed − lagMs`). A shot then uses **one rule in both
+modes** (`fire()` in `src/shooter.js`):
 
-- warp **on** → the *current* orientation (what the reprojected image shows) → hit.
-- warp **off** → the *lagged* orientation (what the raw frame shows) → miss while tracking.
+- **The ray** leaves along the **current** input aim (`input.yaw/pitch`): the gun
+  points where your hand is now, warp or no warp.
+- **The targets** are tested where the **displayed** frame shows them: rewound to
+  that frame's world time (`lastRenderedElapsed`), plus velocity × frame age
+  when motion vectors are on (the same extrapolation the shader draws).
 
-The ray tests the real targets. The only thing that changes the outcome is the
-camera-rotation latency the warp removes — exactly the quantity the shader
-reprojects by.
+So both modes test the *same* target positions, the ones on screen. The only
+thing that differs is what sits under the crosshair, which is a DOM element
+fixed at screen centre:
 
-The targets *move*, which forces you to track (mouse in motion = the only time
-lag matters). To keep this honest, target positions are advanced **only on the
-30 FPS render tick** (driven by absolute time), so the displayed target and the
-ray-tested target are always at the same place. That removes any sub-frame
-target-motion error from the warped side — a miss can *still* only come from view
-latency. The divergence emerges from the real warp mechanism, and the code path
-proves it (`raycast.js`, `targets.js`, and `fire()` in `main.js`).
+- warp **off**: the frame is composited with zero shift, so screen centre shows
+  the frame's **lagged** camera direction. You centre the target there, but the
+  ray goes along your current aim, which is off by exactly the fresh − rendered
+  angle (≈ tracking speed × (lag + frame age)) → **miss while tracking**.
+- warp **on**: the frame is shifted by that same fresh − rendered angle, so
+  screen centre shows your **current** aim; the target under the crosshair is on
+  the ray → **hit**.
+
+Holding still, the angle is ~0 and both modes hit. The only quantity that
+changes the outcome is the camera-rotation latency, exactly what the shader
+reprojects by. Two known approximations: target positions come from an analytic
+function of time evaluated at the frame's time (identical to what was drawn),
+and with `M` on the shader clamps its per-pixel shift (`MAX_VEL_CONTRIBUTION`),
+which can bind at 10 FPS late in a frame while the hit test does not clamp.
+
+The A/B replay (`B`) projects the same tested target twice: through the camera
+the screen was showing ("where it looked") and through your current aim ("where
+it really was"), so the replayed gap is the view error and nothing else.
 
 **To gather data for the report:** press `R`, do a controlled mouse sweep (try
 it with warp on, then off, or at different lag settings), press `R` again, then

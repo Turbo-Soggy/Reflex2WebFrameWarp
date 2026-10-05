@@ -13,7 +13,7 @@
 
 export function installSummary(ctx) {
   const el = document.getElementById('summary');
-  if (!el) return { show() {}, hide() {} };
+  if (!el) return { show() {}, hide() {}, isShown: () => false };
   const card = el.querySelector('.summary-card');
 
   const shots = (b) => b.hits + b.misses;
@@ -65,5 +65,5 @@ export function installSummary(ctx) {
   // Clicking the card is a user gesture, so we can re-acquire pointer lock.
   el.addEventListener('click', () => { hide(); ctx.relock(); });
 
-  return { show, hide };
+  return { show, hide, isShown: () => el.classList.contains('show') };
 }

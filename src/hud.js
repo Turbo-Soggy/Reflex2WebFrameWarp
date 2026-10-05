@@ -37,7 +37,7 @@ export class HUD {
   addInputEvents(n) { this._pendingInputEvents += n; }
 
   /** Refresh the on-screen text. Cheap to call every frame (DOM touched ~1 Hz). */
-  update(now, { warpEnabled, motionVectorsOn, injectedLagMs, noWarpMs, warpMs }) {
+  update(now, { warpEnabled, motionVectorsOn, injectedLagMs, noWarpMs, warpMs, frozen = false }) {
     const dt = now - this._lastFlush;
     if (dt < 1000) return;
 
@@ -55,8 +55,11 @@ export class HUD {
     this.el.warp.textContent = warpFps.toFixed(0) + ' FPS';
     this.el.inputrate.textContent = inputHz.toFixed(0) + ' Hz';
     // Measured view-direction latency: without warp → with warp.
-    this.el.latency.textContent =
-      `${noWarpMs.toFixed(0)} → ${warpMs.toFixed(0)} ms`;
+    // While the source is frozen (Space) no samples are taken, so say so rather
+    // than showing a stale smoothed value.
+    this.el.latency.textContent = frozen
+      ? 'frozen'
+      : `${noWarpMs.toFixed(0)} → ${warpMs.toFixed(0)} ms`;
 
     this._sceneFrames = 0;
     this._compositeFrames = 0;

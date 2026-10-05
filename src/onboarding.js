@@ -30,7 +30,7 @@ export function installOnboarding() {
 
   // Nothing to drive, or explicitly disabled → a no-op start().
   if (!coach || new URLSearchParams(location.search).has('nointro')) {
-    return { start() {} };
+    return { start() {}, cancel() {}, isActive: () => false };
   }
 
   const SHOTS_TO_ADVANCE = 5;   // misses needed before we nudge "press W"
@@ -98,5 +98,13 @@ export function installOnboarding() {
       started = true;
       toTrack();
     },
+    /** End the walkthrough for good (presenter mode / chapters own the
+     *  captions): hides the coach + W prompt, and start() becomes a no-op. */
+    cancel() {
+      if (state === 'done') return;
+      started = true;
+      done();
+    },
+    isActive: () => state !== 'idle' && state !== 'done',
   };
 }

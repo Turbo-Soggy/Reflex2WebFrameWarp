@@ -2,14 +2,16 @@
    raycast.js — Hit detection from a given camera orientation
    ---------------------------------------------------------------------------
    The honest core of the shooter. A "shot" is a ray from the camera position
-   along the forward axis of a given (yaw, pitch) — i.e. straight through the
-   crosshair at screen center.
+   along the forward axis of a given (yaw, pitch).
 
-   What makes the shot hit or miss is WHICH orientation main.js passes in: the
-   CURRENT orientation when warp is on (what the reprojected screen shows → you
-   hit what you see) or the LAGGED orientation when warp is off (what the stale
-   frame shows → you miss while tracking). It's the same real camera-rotation
-   latency the warp shader reprojects by — no faked target states.
+   shooter.js always passes the CURRENT input aim (warp on or off), and before
+   calling this rewinds the targets to where the DISPLAYED frame shows them
+   (the frame's world time, plus the motion-vector extrapolation when M is on).
+   So the ray and the tested targets are the same in both modes; what differs is
+   only what the screen centre (the crosshair) shows. Warp ON reprojects the
+   image to the current aim, so the crosshair is on the ray. Warp OFF shows the
+   frame at its lagged orientation, so the crosshair is off the ray by the
+   fresh - rendered angle: a miss while tracking. No faked target states.
 --------------------------------------------------------------------------- */
 
 import * as THREE from 'three';

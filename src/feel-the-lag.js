@@ -59,6 +59,7 @@ export function installFeelTheLag(ctx) {
     console.log('[FrameWarp] feel-the-lag ramp STARTED');
   }
   function stop() {
+    if (!active) return; // idempotent: never clobber the lag slider when idle
     active = false;
     cancelAnimationFrame(raf);
     hideBanner();
@@ -76,5 +77,10 @@ export function installFeelTheLag(ctx) {
     }
   });
 
-  return { toggle() { active ? stop() : start(); } };
+  return {
+    toggle() { active ? stop() : start(); },
+    /** Cancel a running ramp (restores the resting lag). No-op when idle. */
+    stop,
+    isActive: () => active,
+  };
 }

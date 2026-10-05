@@ -15,12 +15,35 @@ const COLORS = {
   text: '#8b97a7',
 };
 
+// Auto-range: the y-axis top is the max of both series over the buffer, rounded
+// up to the next STEP_MS, never below MIN_MAX_MS. So the no-warp line (injected
+// lag + frame wait) is never pinned flat against the top of the plot.
+const STEP_MS = 50;
+const MIN_MAX_MS = 100;
+
 export class LatencyChart {
-  constructor(canvas, { maxMs = 150 } = {}) {
+  /**
+   * @param canvas
+   * @param opts.maxMs optional hard override for the y-axis top (ms). Omit for
+   *                   auto-ranging.
+   */
+  constructor(canvas, { maxMs } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.maxMs = maxMs;
+    this.fixedMaxMs = Number.isFinite(maxMs) && maxMs > 0 ? maxMs : null;
+    this.maxMs = this.fixedMaxMs ?? MIN_MAX_MS; // current axis top (ms)
     this._lastDraw = 0;
+  }
+
+  /** Axis top for the given series: the hard override, or the auto range. */
+  _axisMax(a, b) {
+    if (this.fixedMaxMs) return this.fixedMaxMs;
+    let peak = 0;
+    for (const s of [a, b]) {
+      if (!s) continue;
+      for (const v of s) if (Number.isFinite(v) && v > peak) peak = v;
+    }
+    return Math.max(MIN_MAX_MS, Math.ceil(peak / STEP_MS) * STEP_MS);
   }
 
   /**
@@ -41,11 +64,15 @@ export class LatencyChart {
 
     ctx.clearRect(0, 0, W, H);
 
+    this.maxMs = this._axisMax(noWarpSeries, warpSeries);
+    // Gridline spacing adapts so the axis keeps ~3-6 labelled lines.
+    const gridStep = this.maxMs <= 300 ? STEP_MS : Math.ceil(this.maxMs / 5 / STEP_MS) * STEP_MS;
+
     // Horizontal gridlines + ms labels.
     ctx.font = '10px ui-monospace, monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    for (let ms = 0; ms <= this.maxMs; ms += 50) {
+    for (let ms = 0; ms <= this.maxMs; ms += gridStep) {
       const y = padT + plotH - (ms / this.maxMs) * plotH;
       ctx.strokeStyle = COLORS.grid;
       ctx.beginPath();

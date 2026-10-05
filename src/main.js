@@ -25,6 +25,7 @@ import { LagSim } from './lag.js';
 import { HUD, Scoreboard } from './hud.js';
 import { WarpTarget } from './warp-target.js';
 import { QuadRenderer } from './quad-render.js';
+import { installViews } from './views.js';
 import { Latency } from './latency.js';
 import { LatencyChart } from './chart.js';
 import { AccuracyChart } from './accuracy-chart.js';
@@ -43,6 +44,9 @@ import { installFeelTheLag } from './feel-the-lag.js';
 import { installPermalink } from './permalink.js';
 import { installHeatmap } from './heatmap.js';
 import { installAttract } from './attract.js';
+import { createAutopilot, aimAt } from './autopilot.js';
+import { installPresenter } from './presenter.js';
+import { installChapters } from './chapters.js';
 import { installABTest } from './abtest.js';
 import { TraceRecorder } from './replay/trace.js';
 import { DISPLAY_FOV_Y, GUARD, fovXRad } from './config.js';
@@ -173,6 +177,10 @@ const audio = new Audio();                // procedural SFX; starts on first cli
 const warpTarget = new WarpTarget(1, 1);  // sized properly in resize()
 const quad = new QuadRenderer();
 quad.setGuard(guard);
+// Phase 2 mechanism views: a second quad left at guard 0 draws the WHOLE
+// wide-FOV texture (x-ray); views.js owns view/freeze/zone state + composite.
+const xrayQuad = new QuadRenderer();
+const views = installViews({ lag, quad, xrayQuad });
 const velocityPass = new VelocityPass();
 const latency = new Latency();
 const chart = new LatencyChart(document.getElementById('latency-chart'));
@@ -234,8 +242,10 @@ const summary = installSummary({       // session results card (Phase 5)
 overlay.addEventListener('click', relock);
 document.addEventListener('pointerlockchange', () => {
   overlay.classList.toggle('hidden', input.locked);
-  if (input.locked) onboarding.start();        // kick off the walkthrough on first entry
-  else if (!abtest.isActive()) summary.show(); // releasing the mouse → show the summary
+  // Presenter mode: no walkthrough on lock, and no summary card on Esc (the
+  // presenter releases the mouse to talk; the scene stays up behind a clear overlay).
+  if (input.locked) { if (!presenter.isOn()) onboarding.start(); } // walkthrough on first entry
+  else if (!abtest.isActive() && !presenter.isOn()) summary.show(); // releasing the mouse → summary
                                                // (but not while the A/B replay owns the screen)
 });
 
@@ -318,15 +328,19 @@ applyWarpLag(); // initialise: warp starts off → 150 ms
 // The one place warp flips: keeps state, scoreboard highlight, injected lag, the
 // on-screen "moment" and the SFX in lockstep. Both the W key (controls.js) and
 // the "Feel the Lag" relief (feel-the-lag.js) call through here.
-function setWarp(on) {
+// { quiet: true } (the chapter presets) skips only the pulse / call-out and the
+// SFX; the state, scoreboard, injected lag and the event are identical.
+function setWarp(on, { quiet = false } = {}) {
   warpEnabled = on;
   scoreboard.setActiveMode(on);
   warpMarks.push({ sample: latency.totalSamples, on }); // chart guide (Phase 5)
   if (warpMarks.length > 16) warpMarks.shift();
   applyWarpLag();                 // OFF → 150 ms, ON → 50 ms (immediate)
-  announceWarp(on);               // full-screen pulse + big mode call-out
-  if (on) audio.warpOn(); else audio.warpOff();
-  window.dispatchEvent(new CustomEvent('framewarp:warp', { detail: { on } }));
+  if (!quiet) {
+    announceWarp(on);             // full-screen pulse + big mode call-out
+    if (on) audio.warpOn(); else audio.warpOff();
+  }
+  window.dispatchEvent(new CustomEvent('framewarp:warp', { detail: { on, quiet } }));
   console.log('[FrameWarp] warp', on ? 'ENABLED' : 'DISABLED');
 }
 
@@ -381,21 +395,85 @@ const shooter = createShooter({
   getMotionVectorsOn: () => motionVectorsOn,
   getLastRenderedElapsed: () => lastRenderedElapsed,
   getLastRenderWallTime: () => lastRenderWallTime,
+  // Phase 2: the mechanism views (sbs, x-ray) and freeze lock shooting.
+  canShoot: () => !views.locksShooting(),
+  get viewLocksShooting() { return views.locksShooting(); },
 });
 // "Feel the Lag" ramp (Phase 4): drives the lag slider up, then setWarp for relief.
 const feelTheLag = installFeelTheLag({ setWarp, getWarpEnabled: () => warpEnabled, audio });
 
 // Idle attract / auto-demo (§1B): after 30 s untouched, pan the view and flip
 // warp on a loop. Drives the same Input the loop reads; stops on any interaction.
-installAttract({ input, setWarp, getWarpEnabled: () => warpEnabled, isLocked: () => input.locked });
+// Hands-free camera driver (Phase 1, key A): 'track' follows the target's
+// angular path on its track (true world time), low-passed like a human's
+// reversal. Writes the same Input yaw/pitch as a mouse, so the unchanged
+// pipeline lags and reprojects it. Its tick is its own rAF loop (autopilot.js),
+// not part of frame(). Cancelled only by A or real mouse motion while locked.
+const _trackPos = { x: 0, y: 0, z: 0 };
+const autopilot = createAutopilot({
+  input,
+  mode: 'track',
+  getTrackAim: () => {
+    // Same triangle wave as Targets.update(), evaluated at the TRUE time.
+    const m = targets.meshes[0];
+    const period = targets._period, L = world.range.trackXLimit;
+    const u = ((clock.elapsedTime / period) + (m?.userData.phase || 0)) % 1;
+    _trackPos.x = L * (u < 0.5 ? (-1 + 4 * u) : (3 - 4 * u));
+    _trackPos.y = m ? m.userData.baseY : 2;
+    _trackPos.z = world.range.trackZ;
+    return aimAt(camera.position, _trackPos);
+  },
+  onStop: (reason) => {
+    if (reason === 'mouse') presenter?.caption('Autopilot OFF (mouse)');
+    console.log('[FrameWarp] autopilot OFF', reason === 'mouse' ? '(mouse took over)' : '');
+  },
+});
+
+const attract = installAttract({
+  input, setWarp, getWarpEnabled: () => warpEnabled, isLocked: () => input.locked,
+  isBusy: () => autopilot.isRunning(), // never attract over the hands-free driver
+});
+
+// Presenter mode (Phase 1): ?present or P. Owns the warp badge, the "last key"
+// caption, the transparent overlay and the true-aim ghost reticle (J). Reads the
+// pipeline state from its own rAF tick; frame() is untouched.
+// Projector brightness: presenter mode raises the exposure (~1.4) and restores
+// 1.0 on exit. The scene renders into a render target (three.js skips tone
+// mapping there) and the warp ShaderMaterial has no tone-mapping chunk, so
+// toneMappingExposure alone would change nothing on screen; the same value is
+// also applied as a display gain in the warp shader (uExposure) on both quads.
+function setExposure(v) {
+  renderer.toneMappingExposure = v;
+  quad.setExposure(v);
+  xrayQuad.setExposure(v);
+}
+const presenter = installPresenter({
+  input, warpTarget, camera, quad, lag, views, audio, setExposure,
+  getWarpEnabled: () => warpEnabled,
+  getMotionVectorsOn: () => motionVectorsOn,
+  attract, onboarding, summary, feelTheLag, heatmap, abtest,
+});
 
 const controls = installControls({
   recorder, traceRecorder, audio, setWarp, feelTheLag, heatmap, abtest,
+  views, // Phase 2: S / V / Space / . / Z
+  presenter, autopilot, // Phase 1: P / A / F / J
   toggleCharts: () => setChartsExpanded(!chartsExpanded),
   getWarpEnabled: () => warpEnabled,
   getMotionVectorsOn: () => motionVectorsOn, setMotionVectorsOn: (v) => { motionVectorsOn = v; },
   getDemoMode: () => demoMode, setDemoMode: (v) => { demoMode = v; },
   getSlowMo: () => slowMo, setSlowMo: (v) => { slowMo = v; },
+});
+
+// Scenario chapters (Presenter plan Phase 3): 1-9 / PageDown / PageUp / 0.
+// Each chapter is a full idempotent preset over the same accessors as the keys.
+const chapters = installChapters({
+  presenter, views, autopilot, feelTheLag, abtest, heatmap, onboarding,
+  scoreboard, accuracyChart, setWarp,
+  getWarpEnabled: () => warpEnabled,
+  getMotionVectorsOn: () => motionVectorsOn, setMotionVectorsOn: (v) => { motionVectorsOn = v; },
+  getSlowMo: () => slowMo, setSlowMo: (v) => { slowMo = v; },
+  getChartsExpanded: () => chartsExpanded, setChartsExpanded,
 });
 
 // --- Display-rate sanity check ---------------------------------------------
@@ -494,32 +572,53 @@ function frame() {
   const du = -dYaw / fovX;
   const dv =  dPitch / fovY;
 
-  // Single fullscreen viewport. Warp ON reprojects toward the freshest input;
-  // warp OFF shows the raw lagged frame (zero shift). The motion-vector inputs
-  // smooth moving objects per-pixel when enabled (dt = age of the source frame).
-  const delta = warpEnabled ? [du, dv] : [0, 0];
+  // Normal view: single fullscreen viewport. Warp ON reprojects toward the
+  // freshest input; warp OFF shows the raw lagged frame (zero shift). The
+  // motion-vector inputs smooth moving objects per-pixel when enabled (dt = age
+  // of the source frame). views.composite() picks the draw for the current view
+  // (normal / side-by-side / x-ray) from these same values.
+  // Frozen (Space): no new source frames, so the object extrapolation is pinned
+  // at dt = 0 — a paused world should not keep sliding the targets.
+  const frozen = views.isFrozen();
   const mv = {
     texture: warpTarget.velocityTexture,
-    dtSeconds: Math.max(0, (now - lastRenderWallTime) / 1000),
+    dtSeconds: frozen ? 0 : Math.max(0, (now - lastRenderWallTime) / 1000),
     enabled: motionVectorsOn,
   };
-  quad.render(renderer, warpTarget.texture, delta, fullW, fullH, mv);
+  views.composite({
+    renderer, texture: warpTarget.texture, du, dv, dYaw, dPitch, warpEnabled, mv,
+    W: fullW, H: fullH, guard, now,
+    frameAgeMs: now - latency.renderedInputTime, // now − input time of the shown frame
+  });
 
   // Live aim-vs-display divergence (no-op unless the H overlay is open).
-  heatmap.update(fresh, { yaw: warpTarget.renderedYaw, pitch: warpTarget.renderedPitch }, warpEnabled);
+  // Pass the pose the compositor ACTUALLY drew (rendered + the applied delta,
+  // converted back to angles) so the heatmap measures rather than assumes.
+  heatmap.update(fresh, {
+    yaw: warpTarget.renderedYaw - (warpEnabled ? du : 0) * fovX,
+    pitch: warpTarget.renderedPitch + (warpEnabled ? dv : 0) * fovY,
+  }, camera.aspect);
 
   hud.countCompositeFrame();
 
   // 4) Measure latency from real timestamps, then record / display.
-  const lat = latency.sample(now, warpEnabled);
-  recorder.capture(now, {
-    warpEnabled,
-    injectedLagMs: lag.lagMs,
-    sourceHz: 1000 / lag.renderInterval,
-    guardPct: guard * 100,
-    noWarpMs: lat.noWarp,
-    warpMs: lat.warp,
-  });
+  //    Skipped while frozen: a paused source would log an ever-growing frame age
+  //    that is an artefact of the pause, not of the pipeline.
+  if (!frozen) {
+    const lat = latency.sample(now, warpEnabled);
+    recorder.capture(now, {
+      warpEnabled,
+      injectedLagMs: lag.lagMs,
+      sourceHz: 1000 / lag.renderInterval,
+      guardPct: guard * 100,
+      noWarpMs: lat.noWarp,
+      warpMs: lat.warp,
+    });
+  } else {
+    // Keep the composite-interval baseline current so the first sample after
+    // resume is one display interval, not the length of the pause.
+    latency._lastCompositeNow = now;
+  }
   // Map each W-toggle onto the chart's x-axis (0..1) for its dashed guide.
   const n = latency.noWarp.length;
   const origin = latency.totalSamples - n; // sample index of buffer[0]
@@ -536,6 +635,7 @@ function frame() {
     injectedLagMs: lag.lagMs,
     noWarpMs: latency.smoothNoWarp,
     warpMs: latency.smoothWarp,
+    frozen,
   });
   if (recorder.recording) controls.updateRecIndicator(); // live sample count
 }
@@ -547,10 +647,13 @@ frame();
 if (new URLSearchParams(location.search).has('debug')) {
   window.FrameWarp = { renderer, camera, world, input, lag, warpTarget, quad, latency, recorder,
     traceRecorder, targets, scoreboard, velocityPass, effects, audio, feelTheLag, fire: shooter.fire,
-    accuracyChart, heatmap, abtest, setChartsExpanded, setWarp,
+    accuracyChart, heatmap, abtest, setChartsExpanded, setWarp, views, xrayQuad,
+    presenter, autopilot, attract, onboarding, summary, chapters, setExposure,
     get warpEnabled() { return warpEnabled; }, set warpEnabled(v) { warpEnabled = v; },
     get motionVectorsOn() { return motionVectorsOn; }, set motionVectorsOn(v) { motionVectorsOn = v; },
     get guard() { return guard; } };
   console.log('[FrameWarp] debug namespace exposed as window.FrameWarp');
 }
-console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors (Shift+M=slow-mo) L=feel-the-lag B=ab-test H=heat-map G=expand-charts D=demo-mode X=mute I=about ?=controls R=record E=export T=input-trace.');
+console.log('[FrameWarp] ready. Click to enter & shoot. Keys: W=warp M=motion-vectors (Shift+M=slow-mo) L=feel-the-lag B=ab-test H=heat-map G=expand-charts D=demo-mode X=mute I=about ?=controls R=record E=export T=input-trace' +
+  ' | views: S=side-by-side V=x-ray Space=freeze .=step Z=zone-tint' +
+  ' | presenter: P=presenter-mode A=autopilot F=fullscreen J=true-aim-reticle 1-9=chapters PgDn/PgUp (or arrows)=next/prev 0=reset-scores.');

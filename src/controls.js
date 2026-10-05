@@ -4,7 +4,8 @@
    Keys: W = warp · M = motion vectors · Shift+M = slow-mo · L = feel-the-lag
    ramp · D = demo mode · X = mute · I = about/theory · ? = cheat-sheet ·
    R = record · E = export CSV · T = record an input trace (downloads JSON on
-   stop — feed it to bench/run.js). The toggled app state is read/written
+   stop — feed it to bench/run.js) · P = presenter mode · A = autopilot ·
+   F = fullscreen (presenter) · J = true-aim reticle. The toggled app state is read/written
    through `ctx` accessors so main keeps owning it (and the render loop sees the
    same values); the warp toggle routes through ctx.setWarp (main.js) so every
    side-effect lives in one place.
@@ -43,7 +44,17 @@ export function installControls(ctx) {
   }
 
   window.addEventListener('keydown', (e) => {
-    switch (e.key.toLowerCase()) {
+    if (e.repeat) return; // holding a key must not strobe the flash / sound
+    const key = e.key.toLowerCase();
+    // Presenter mode: no file downloads mid-talk (R starts a CSV the E key
+    // would save; T downloads a trace on stop).
+    if (ctx.presenter?.isOn() && (key === 'r' || key === 'e' || key === 't') &&
+        !e.ctrlKey && !e.metaKey) {
+      console.log(`[FrameWarp] '${key.toUpperCase()}' ignored in presenter mode (no downloads mid-talk; P leaves presenter mode)`);
+      ctx.presenter.caption(`${key.toUpperCase()} is off in presenter mode`);
+      return;
+    }
+    switch (key) {
       case 'w':
         // All the warp side-effects (lag, scoreboard, pulse, SFX, event) live in
         // one place — main.js setWarp — so the key just flips the bit.
@@ -102,6 +113,48 @@ export function installControls(ctx) {
         console.log('[FrameWarp] demo mode', on ? 'ON (scores only)' : 'OFF (tech readouts)');
         break;
       }
+      // --- Phase 2 mechanism views (state lives in views.js) ----------------
+      case ' ': // Space: freeze / resume the source (the warp keeps running)
+        if (e.code !== 'Space' || !ctx.views || ctx.views.isTypingEvent(e)) break;
+        e.preventDefault(); // no page scroll / focused-button activation
+        ctx.views.setFrozen(!ctx.views.isFrozen());
+        break;
+      case '.': // step exactly one source frame (freezes first if running)
+        if (!ctx.views || ctx.views.isTypingEvent(e)) break;
+        ctx.views.stepOnce();
+        break;
+      case 's': // side-by-side: raw frame | same frame reprojected to now
+        if (!ctx.views || ctx.views.isTypingEvent(e) || e.ctrlKey || e.metaKey) break;
+        ctx.views.toggleView('sbs');
+        break;
+      case 'v': // x-ray: the whole rendered texture + the crop the shader samples
+        if (!ctx.views || ctx.views.isTypingEvent(e) || e.ctrlKey || e.metaKey) break;
+        ctx.views.toggleView('xray');
+        break;
+      case 'z': // guard-band zone tint
+        if (!ctx.views || ctx.views.isTypingEvent(e) || e.ctrlKey || e.metaKey) break;
+        ctx.views.setZones(!ctx.views.getViewState().zones);
+        break;
+      // --- Phase 1 presenter mode (state lives in presenter.js / autopilot.js)
+      case 'p':
+        if (e.ctrlKey || e.metaKey) break;
+        ctx.presenter?.toggle();
+        break;
+      case 'a': { // hands-free autopilot (works unlocked; only A or real mouse motion stops it)
+        if (!ctx.autopilot || e.ctrlKey || e.metaKey) break;
+        const on = ctx.autopilot.toggle();
+        ctx.presenter?.caption(on ? 'Autopilot ON' : 'Autopilot OFF');
+        console.log('[FrameWarp] autopilot', on ? 'ON (A or mouse motion stops it)' : 'OFF');
+        break;
+      }
+      case 'f': // fullscreen (presenter mode only)
+        if (e.ctrlKey || e.metaKey) break;
+        ctx.presenter?.toggleFullscreen();
+        break;
+      case 'j': // true-aim ghost reticle
+        if (e.ctrlKey || e.metaKey) break;
+        ctx.presenter?.toggleGhost();
+        break;
       case 'm':
         if (e.shiftKey) {
           // Shift+M: toggle slow-mo by driving the Source-rate slider (keeps the
